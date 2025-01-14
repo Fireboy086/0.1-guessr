@@ -1,13 +1,18 @@
 Spotify Guessing Game
 i am too lazy to make a readme myself so i used an AI
 
+
 Overview
+
 
 The Spotify Guessing Game is a fun and engaging game where users guess song titles and artists from a playlist. Players can challenge themselves with multiple difficulty levels and modes, including Hard, Harder, and Harder Harder Modes. The game features a dynamic point system to make gameplay exciting and competitive.
 
+
 Features
 
+
 Dynamic Difficulty Levels:
+
 
 Normal Mode: Suggestions include partial matches.
 
@@ -17,15 +22,21 @@ Harder Mode: Suggestions require exact song name.
 
 Harder Harder Mode: Suggestions require both song name and artist.
 
+
 Point System: Earn points based on accuracy, speed, and fewer mistakes.
+
 
 Konami Code Easter Egg: Unlock configuration settings with a secret code.
 
+
 Playlist Options: Choose from your Spotify playlists, liked songs, or custom playlist URLs.
+
 
 Customizable Settings: Configure playback duration, max lives, and volume.
 
+
 How to Play
+
 
 Launch the game.
 
@@ -37,7 +48,9 @@ Earn points for correct guesses and speed.
 
 Track your progress and performance in the summary screen.
 
+
 Installation
+
 
 Prerequisites
 
@@ -53,7 +66,7 @@ Setup
 
 Clone the repository:
 
-git clone https://github.com/yourusername/spotify-guessing-game.git
+git clone https://github.com/Fireboy086/0.1-guessr.git
 
 Install dependencies:
 
@@ -69,7 +82,9 @@ Add a Redirect URI: http://localhost:8080.
 
 Update the config.py file with your credentials.
 
+
 Configuration
+
 
 Customize gameplay settings in config.py:
 
@@ -87,11 +102,6 @@ HARDER_MODE: Toggle for Harder Mode.
 
 HARDER_HARDER_MODE: Toggle for Harder Harder Mode.
 
-Usage
-
-Run the game:
-
-python main.py
 
 Point System
 
