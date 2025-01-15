@@ -59,14 +59,24 @@ def get_user_playlists():
             break
         offset += limit
     return playlists
-#GUI for selecting playlist
+
 class PlaylistSelector:
     def __init__(self, master):
         self.master = master
         self.master.title("Select a Playlist")
         self.master.config(bg=BACKGROUND_COLOR)
 
-        self.label = tk.Label(master, text="Choose a playlist to start the game:", font=FONT, bg=BACKGROUND_COLOR, fg="white")
+        # Frame styling for a slightly nicer look
+        self.main_frame = tk.Frame(master, bg=BACKGROUND_COLOR, bd=2, relief=tk.RIDGE)
+        self.main_frame.pack(padx=20, pady=20)
+
+        self.label = tk.Label(
+            self.main_frame, 
+            text="Choose a playlist to start the game:", 
+            font=("Arial", 14, "bold"), 
+            bg=BACKGROUND_COLOR, 
+            fg="white"
+        )
         self.label.pack(pady=BUTTON_PADDING)
 
         # Fetch user's playlists and extract names and IDs
@@ -82,10 +92,16 @@ class PlaylistSelector:
         self.playlist_options.insert(1, "Enter Custom Playlist URL")
 
         self.playlist_var = tk.StringVar(value=self.playlist_options[0])
-        self.playlist_menu = ttk.Combobox(master, textvariable=self.playlist_var, values=self.playlist_options, state="readonly", font=FONT)
+        self.playlist_menu = ttk.Combobox(
+            self.main_frame, 
+            textvariable=self.playlist_var, 
+            values=self.playlist_options, 
+            state="readonly", 
+            font=FONT
+        )
         self.playlist_menu.pack(pady=BUTTON_PADDING)
 
-        self.custom_playlist_entry = tk.Entry(master, font=FONT, width=50)
+        self.custom_playlist_entry = tk.Entry(self.main_frame, font=FONT, width=50)
         self.custom_playlist_entry.pack(pady=BUTTON_PADDING)
         self.custom_playlist_entry.insert(0, "Enter Spotify Playlist URL here")
         self.custom_playlist_entry.bind("<FocusIn>", self.clear_entry)
@@ -93,7 +109,15 @@ class PlaylistSelector:
 
         self.playlist_var.trace('w', self.on_playlist_select)
 
-        self.start_button = tk.Button(master, text="Start Game", command=self.start_game, font=FONT)
+        self.start_button = tk.Button(
+            self.main_frame, 
+            text="Start Game", 
+            command=self.start_game, 
+            font=("Arial", 12, "bold"), 
+            bg="#4CAF50", 
+            fg="black",
+            relief=tk.RAISED
+        )
         self.start_button.pack(pady=BUTTON_PADDING)
 
     def clear_entry(self, event):
@@ -141,7 +165,6 @@ class PlaylistSelector:
         app = GuessingGame(root, track_uris, track_names, track_artists)
         root.mainloop()
 
-
 # GUI for the guessing system
 class GuessingGame:
     def __init__(self, master, track_uris, track_names, track_artists):
@@ -149,6 +172,7 @@ class GuessingGame:
         self.master.title(WINDOW_TITLE)
         self.master.config(bg=BACKGROUND_COLOR)
 
+        # Data tracking
         self.track_uris = track_uris
         self.track_names = track_names
         self.track_artists = track_artists
@@ -157,6 +181,7 @@ class GuessingGame:
         self.current_artist = None
         self.replay_count = 0
         self.current_play_time = PLAYBACK_DURATION  # Initial playback duration
+        self.revealed_seconds = self.current_play_time
         self.guess_count = 0  # Initialize guess count
         self.guesses = []  # Store user's guesses
         self.played_songs = []  # Store all played songs and guesses
@@ -165,71 +190,128 @@ class GuessingGame:
         # Handle window closing event
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-        # GUI Elements
-        self.label = tk.Label(master, text="Guess the Song!", font=FONT, bg=BACKGROUND_COLOR, fg="white")
+        # Main frame for the guessing game
+        self.game_frame = tk.Frame(master, bg=BACKGROUND_COLOR, bd=2, relief=tk.RIDGE)
+        self.game_frame.pack(padx=20, pady=20)
+
+        # Label for instructions/status
+        self.label = tk.Label(
+            self.game_frame, 
+            text="Guess the Song!", 
+            font=("Arial", 16, "bold"), 
+            bg=BACKGROUND_COLOR, 
+            fg="white"
+        )
         self.label.pack(pady=BUTTON_PADDING)
 
-        self.lives_label = tk.Label(master, text=f"Lives: {self.lives}", font=FONT, bg=BACKGROUND_COLOR, fg="white")
+        self.lives_label = tk.Label(
+            self.game_frame, 
+            text=f"Lives: {self.lives}", 
+            font=("Arial", 13), 
+            bg=BACKGROUND_COLOR, 
+            fg="white"
+        )
         self.lives_label.pack(pady=BUTTON_PADDING)
 
-        self.type_frame = tk.Frame(master, bg=BACKGROUND_COLOR)
+        self.type_frame = tk.Frame(self.game_frame, bg=BACKGROUND_COLOR, bd=2, relief=tk.GROOVE)
         self.type_frame.pack(pady=BUTTON_PADDING)
 
-        # Entry box and suggestions
+        # Entry box
         self.entry = tk.Entry(self.type_frame, font=FONT, width=40)
         self.entry.pack(side=tk.LEFT, padx=5)
         self.entry.bind("<KeyRelease>", self.update_suggestions)
-        self.entry.bind("<Return>", self.on_entry_return)  # Enter key to select and submit
+        self.entry.bind("<Return>", self.on_entry_return)  # Enter key
         self.entry.focus_set()
 
-        self.suggestions = tk.Listbox(self.type_frame, font=FONT, width=40, height=5)
+        # Suggestions listbox
+        self.suggestions = tk.Listbox(
+            self.type_frame, 
+            font=FONT, 
+            width=40, 
+            height=5, 
+            bg="#404040", 
+            fg="white", 
+            highlightbackground="#FFFF00", 
+            highlightthickness=1, 
+            selectbackground="#606060"
+        )
         self.suggestions.pack(side=tk.LEFT, padx=5)
         self.suggestions.bind('<<ListboxSelect>>', self.on_suggestion_select)
-        self.suggestions.bind("<Double-Button-1>", self.on_suggestion_double_click)  # Double-click to select
-        self.suggestions.bind("<Return>", self.on_suggestion_return)  # Enter key in listbox
+        self.suggestions.bind("<Double-Button-1>", self.on_suggestion_double_click)
+        self.suggestions.bind("<Return>", self.on_suggestion_return)
         self.suggestions.bind("<Up>", self.on_suggestion_key_press)
         self.suggestions.bind("<Down>", self.on_suggestion_key_press)
 
         self.entry.bind("<Up>", self.on_entry_up_down)
         self.entry.bind("<Down>", self.on_entry_up_down)
 
-        self.buttons_frame = tk.Frame(master, bg=BACKGROUND_COLOR)
+        # Control buttons frame
+        self.buttons_frame = tk.Frame(self.game_frame, bg=BACKGROUND_COLOR, bd=2, relief=tk.RIDGE)
         self.buttons_frame.pack(pady=BUTTON_PADDING)
 
-        # Control Buttons
-        self.quit_button = tk.Button(self.buttons_frame, text="Quit Game", command=self.quit_game, font=FONT)
+        self.quit_button = tk.Button(
+            self.buttons_frame, 
+            text="Quit Game", 
+            command=self.quit_game, 
+            font=("Arial", 12, "bold"),
+            bg="#F44336", 
+            fg="black"
+        )
         self.quit_button.pack(side=tk.LEFT, padx=5)
 
-        self.show_summary_button = tk.Button(self.buttons_frame, text="Show Summary", command=self.show_summary_and_quit, font=FONT)
+        self.show_summary_button = tk.Button(
+            self.buttons_frame, 
+            text="Show Summary", 
+            command=self.show_summary_and_quit, 
+            font=("Arial", 12, "bold"),
+            bg="#FF9800", 
+            fg="black"
+        )
         self.show_summary_button.pack(side=tk.LEFT, padx=5)
 
-        self.give_up_button = tk.Button(self.buttons_frame, text="Give Up", command=self.give_up, font=FONT)
+        self.give_up_button = tk.Button(
+            self.buttons_frame, 
+            text="Give Up", 
+            command=self.give_up, 
+            font=("Arial", 12, "bold"),
+            bg="#9C27B0", 
+            fg="black"
+        )
         self.give_up_button.pack(side=tk.LEFT, padx=5)
 
-        self.replay_button = tk.Button(self.buttons_frame, text="Replay 0.5s", command=self.replay_song, font=FONT)
+        self.replay_button = tk.Button(
+            self.buttons_frame, 
+            text="Replay 0.5s", 
+            command=self.replay_song, 
+            font=("Arial", 12, "bold"),
+            bg="#2196F3", 
+            fg="black"
+        )
         self.replay_button.pack(side=tk.LEFT, padx=5)
 
         # Konami Code sequence
         self.konami_sequence = ['Up', 'Up', 'Down', 'Down', 'Left', 'Right', 'Left', 'Right', 'b', 'a']
-        self.konami_index = 0  # Index to track progress in the Konami sequence
+        self.konami_index = 0  # Index to track progress
 
         self.master.bind('<KeyPress>', self.detect_konami_code)
 
+        # Start the first random track
         self.play_random_track()
 
+    # -------------------- KONAMI CODE -------------------- #
     def detect_konami_code(self, event):
         """Detect the Konami Code and open the configuration window."""
         key = event.keysym
         expected_key = self.konami_sequence[self.konami_index]
 
-        # Normalize keys (handle uppercase letters)
+        # Normalize keys
         if key.lower() == expected_key.lower():
             self.konami_index += 1
             if self.konami_index == len(self.konami_sequence):
                 self.konami_index = 0
                 self.open_configuration_window()
         else:
-            self.konami_index = 0  # Reset if the sequence is broken
+            self.konami_index = 0  # reset if broken
 
     def open_configuration_window(self):
         """Open a window to change variables for testing."""
@@ -254,7 +336,14 @@ class GuessingGame:
             entry.grid(row=idx, column=1, padx=10, pady=5)
             self.config_entries[var_name] = entry
 
-        save_button = tk.Button(config_window, text="Save", command=self.save_configuration, font=FONT)
+        save_button = tk.Button(
+            config_window, 
+            text="Save", 
+            command=self.save_configuration, 
+            font=FONT, 
+            bg="#4CAF50", 
+            fg="black"
+        )
         save_button.grid(row=len(variables), column=0, columnspan=2, pady=BUTTON_PADDING)
 
     def save_configuration(self):
@@ -275,6 +364,7 @@ class GuessingGame:
         except ValueError:
             messagebox.showerror("Error", "Please enter valid values.")
 
+    # -------------------- SPOTIFY HANDLING -------------------- #
     def get_active_device(self):
         """Check for an active Spotify device."""
         devices = sp.devices()
@@ -284,17 +374,16 @@ class GuessingGame:
         return devices['devices'][0]['id']
 
     def play_track(self, track_uri, start_time, duration, device_id):
-        """Play the track for a specific duration starting from the specified time."""
+        """Play the track for a given duration from a start time."""
         if not device_id:
             print("No active device available for playback.")
-            return  # Exit if no active device is available
+            return
 
-        # Set volume to desired level
+        # Set volume
         try:
             sp.volume(VOLUME_LEVEL, device_id)
         except spotipy.exceptions.SpotifyException as e:
             print(f"Error setting volume: {e}")
-            # Optionally, handle volume setting errors here
 
         # Start playback
         try:
@@ -305,7 +394,7 @@ class GuessingGame:
             self.master.after(2000, self.play_random_track)
             return
 
-        # Schedule pausing after the specified duration
+        # Schedule pause
         self.master.after(int(duration * 1000), lambda: self.pause_playback(device_id))
 
     def pause_playback(self, device_id):
@@ -315,8 +404,9 @@ class GuessingGame:
         except spotipy.exceptions.SpotifyException as e:
             print(f"Error pausing playback: {e}")
 
+    # -------------------- GAME FLOW -------------------- #
     def play_random_track(self):
-        """Play a random track and reset game state."""
+        """Select a random track and play."""
         if self.lives <= 0:
             self.label.config(text="Game Over! You're out of lives.")
             self.show_summary()
@@ -328,9 +418,10 @@ class GuessingGame:
             return
 
         self.replay_count = 0
-        self.current_play_time = PLAYBACK_DURATION  # Reset to the initial playback duration
-        self.guess_count = 0  # Reset guess count for new song
-        self.guesses = []  # Clear previous guesses
+        self.current_play_time = PLAYBACK_DURATION
+        self.revealed_seconds = self.current_play_time
+        self.guess_count = 0
+        self.guesses = []
 
         random_index = random.randint(0, len(self.track_uris) - 1)
         self.current_track = self.track_uris.pop(random_index)
@@ -340,34 +431,34 @@ class GuessingGame:
         device_id = self.get_active_device()
         if not device_id:
             self.label.config(text="No active Spotify device found! Start Spotify on a device.")
-            return  # Exit if no active device is available
+            return
 
-        # Play the track for the initial duration
-        self.play_track(self.current_track, 0, self.current_play_time, device_id)
+        # Play
+        self.play_track(self.current_track, 0, self.revealed_seconds, device_id)
         self.label.config(text="Guess the Song!")
 
     def replay_song(self):
-        """Extend the playback duration by 0.5 seconds and replay up to the current time limit."""
+        """Replay the current track, extending total play time by 0.5s each time."""
         if self.replay_count < 5:
             self.replay_count += 1
-            self.current_play_time += PLAYBACK_DURATION  # Extend the total playing period
+            self.revealed_seconds += PLAYBACK_DURATION
             device_id = self.get_active_device()
             if not device_id:
                 self.label.config(text="No active Spotify device found! Start Spotify on a device.")
-                return  # Exit if no active device is available
+                return
 
-            # Replay the song from the start, up to the current total play time
-            self.play_track(self.current_track, 0, self.current_play_time, device_id)
+            self.play_track(self.current_track, 0, self.revealed_seconds, device_id)
 
+    # -------------------- AUTOCOMPLETE SUGGESTIONS -------------------- #
     def update_suggestions(self, event=None):
-        """Update autocomplete suggestions based on user input."""
+        """Update the suggestions listbox based on the user's input."""
         query = self.entry.get().strip().lower()
-        self.suggestions.delete(0, tk.END)  # Clear previous suggestions
+        self.suggestions.delete(0, tk.END)
 
         if not query:
             return
 
-        # Build full song names with artists for suggestions
+        # Build full song names
         full_names = list(set([
             f"{name} by {artist}"
             for name, artist in zip(
@@ -376,17 +467,17 @@ class GuessingGame:
             )
         ]))
 
-        # Filter matches without duplicates
+        # Filter matches
         matches = [full_name for full_name in full_names if query in full_name.lower()]
 
         for match in matches:
             self.suggestions.insert(tk.END, match)
 
         if matches:
-            self.suggestions.selection_set(0)  # Auto-select the first match
+            self.suggestions.selection_set(0)
 
     def on_suggestion_select(self, event):
-        """Fill the entry box when a suggestion is selected."""
+        """Select suggestion."""
         selection = event.widget.curselection()
         if selection:
             index = selection[0]
@@ -395,17 +486,17 @@ class GuessingGame:
             self.entry.insert(0, value)
 
     def on_suggestion_double_click(self, event):
-        """Submit the guess when a suggestion is double-clicked."""
+        """Double-click to confirm guess."""
         self.on_suggestion_select(event)
         self.secure_guess()
 
     def on_suggestion_return(self, event):
-        """Submit the guess when Enter is pressed in the suggestions list."""
+        """Enter key in the suggestions list."""
         self.on_suggestion_select(event)
         self.secure_guess()
 
     def on_suggestion_key_press(self, event):
-        """Handle up/down key presses in the suggestions list."""
+        """Navigate suggestions with up/down."""
         if event.keysym == "Up":
             if self.suggestions.curselection():
                 index = self.suggestions.curselection()[0]
@@ -422,7 +513,7 @@ class GuessingGame:
                     self.suggestions.see(index + 1)
 
     def on_entry_up_down(self, event):
-        """Move focus to suggestions list when Up/Down keys are pressed in the entry."""
+        """Move focus to suggestions when pressing up/down."""
         if event.keysym == "Down":
             self.suggestions.focus_set()
             if self.suggestions.size() > 0:
@@ -436,7 +527,7 @@ class GuessingGame:
                 self.suggestions.activate(last_index)
 
     def on_entry_return(self, event):
-        """Submit the guess when Enter is pressed in the entry."""
+        """Enter key in the entry box."""
         if self.suggestions.size() > 0:
             self.suggestions.focus_set()
             self.suggestions.selection_set(0)
@@ -445,35 +536,33 @@ class GuessingGame:
         else:
             self.secure_guess()
 
+    # -------------------- GUESS HANDLING -------------------- #
     def secure_guess(self, event=None):
-        """Process the user's guess."""
+        """Check if the user's guess is correct."""
         guess = self.entry.get().strip()
         if not guess:
             self.label.config(text="Please enter a guess!")
-            return  # Prevent empty guesses
+            return
 
-        self.guesses.append(guess)  # Store the guess
+        self.guesses.append(guess)
 
-        # Compare guess to the correct answer (case-insensitive)
         correct_full = f"{self.correct_answer} by {self.current_artist}".lower()
         if guess.lower() == self.correct_answer.lower() or guess.lower() == correct_full:
             self.flash_feedback("green")
             self.label.config(text=f"Correct! The song was: {self.correct_answer} by {self.current_artist}")
-            # Store the played song and user's guesses
             self.played_songs.append({
                 'song': f"{self.correct_answer} by {self.current_artist}",
                 'guesses': self.guesses.copy(),
                 'result': 'Correct'
             })
-            self.master.after(1000, self.play_random_track)  # Wait 1 second, then play the next song
+            self.master.after(1000, self.play_random_track)
         else:
             self.flash_feedback("red")
-            self.guess_count += 1  # Increment guess count
+            self.guess_count += 1
             if self.guess_count >= MAX_GUESS_COUNT:
-                self.lives -= 1  # Lose a life
+                self.lives -= 1
                 self.lives_label.config(text=f"Lives: {self.lives}")
                 self.label.config(text=f"Out of guesses! The song was: {self.correct_answer} by {self.current_artist}")
-                # Store the played song and user's guesses
                 self.played_songs.append({
                     'song': f"{self.correct_answer} by {self.current_artist}",
                     'guesses': self.guesses.copy(),
@@ -481,56 +570,60 @@ class GuessingGame:
                 })
                 self.master.after(2000, self.play_random_track)
             else:
-                self.label.config(text=f"Incorrect! {MAX_GUESS_COUNT - self.guess_count} guesses left.")
+                guesses_left = MAX_GUESS_COUNT - self.guess_count
+                self.label.config(text=f"Incorrect! {guesses_left} guesses left.")
 
-        # Clear the text box and suggestions after each guess
+        # Clear text box and suggestions
         self.entry.delete(0, tk.END)
         self.suggestions.delete(0, tk.END)
         self.entry.focus_set()
 
     def give_up(self):
-        """Skip the current song and lose a life."""
-        self.lives -= 1  # Lose a life
+        """Skip the current track."""
+        self.lives -= 1
         self.lives_label.config(text=f"Lives: {self.lives}")
         self.label.config(text=f"Skipping... The song was: {self.correct_answer} by {self.current_artist}")
-        # Store the played song and user's guesses
         self.played_songs.append({
             'song': f"{self.correct_answer} by {self.current_artist}",
             'guesses': self.guesses.copy(),
             'result': 'Skipped'
         })
-        self.master.after(2000, self.play_random_track)  # Wait 2 seconds, then play the next song
+        self.master.after(2000, self.play_random_track)
 
     def flash_feedback(self, color):
-        """Flash the screen with a feedback color."""
+        """Flash the window background with a color."""
         original_color = self.master.cget('bg')
         self.master.config(bg=color)
-        # Reset background color after 500ms
         self.master.after(500, lambda: self.master.config(bg=original_color))
 
+    # -------------------- EXIT & SUMMARY -------------------- #
     def on_closing(self):
-        """Handle the window closing event."""
+        """When the window closes, show summary."""
         self.show_summary()
 
     def quit_game(self):
-        """Quit the game and show the summary."""
+        """Quit the game and show summary."""
         self.show_summary()
 
     def show_summary_and_quit(self):
-        """Show the summary and end the game with no way back."""
+        """Show summary and end the game with no way back."""
         self.show_summary()
 
     def show_summary(self):
-        """Display a summary of all played songs and the user's guesses."""
-        # Hide the main game window
+        """Show a summary of all played songs and guesses."""
         self.master.withdraw()
 
-        # Create the summary window
         summary_window = tk.Toplevel()
         summary_window.title("Game Summary")
         summary_window.config(bg=BACKGROUND_COLOR)
 
-        summary_label = tk.Label(summary_window, text="Game Summary", font=("Arial", 20, "bold"), bg=BACKGROUND_COLOR, fg="#00FF00")
+        summary_label = tk.Label(
+            summary_window, 
+            text="Game Summary", 
+            font=("Arial", 20, "bold"), 
+            bg=BACKGROUND_COLOR, 
+            fg="#00FF00"
+        )
         summary_label.pack(pady=BUTTON_PADDING)
 
         canvas = tk.Canvas(summary_window, bg=BACKGROUND_COLOR, highlightthickness=0)
@@ -539,48 +632,72 @@ class GuessingGame:
 
         scroll_frame.bind(
             "<Configure>",
-            lambda e: canvas.configure(
-                scrollregion=canvas.bbox("all")
-            )
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
 
         canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
 
         for idx, song_info in enumerate(self.played_songs, start=1):
-            song_label = tk.Label(scroll_frame, text=f"{idx}. {song_info['song']} - {song_info['result']}", font=FONT, bg=BACKGROUND_COLOR, fg="#FFD700")
+            song_label = tk.Label(
+                scroll_frame, 
+                text=f"{idx}. {song_info['song']} - {song_info['result']}", 
+                font=FONT, 
+                bg=BACKGROUND_COLOR, 
+                fg="#FFD700"
+            )
             song_label.pack(pady=(BUTTON_PADDING // 2, 0))
 
-            guesses_label = tk.Label(scroll_frame, text="Your Guesses:", font=("Arial", 14, "underline"), bg=BACKGROUND_COLOR, fg="#ADFF2F")
+            guesses_label = tk.Label(
+                scroll_frame, 
+                text="Your Guesses:", 
+                font=("Arial", 14, "underline"), 
+                bg=BACKGROUND_COLOR, 
+                fg="#ADFF2F"
+            )
             guesses_label.pack()
 
             for guess in song_info['guesses']:
-                guess_item = tk.Label(scroll_frame, text=guess, font=("Arial", 12), bg=BACKGROUND_COLOR, fg="white")
+                guess_item = tk.Label(
+                    scroll_frame, 
+                    text=guess, 
+                    font=("Arial", 12), 
+                    bg=BACKGROUND_COLOR, 
+                    fg="white"
+                )
                 guess_item.pack()
 
-            separator = tk.Label(scroll_frame, text="--------------------", font=FONT, bg=BACKGROUND_COLOR, fg="#00CED1")
+            separator = tk.Label(
+                scroll_frame, 
+                text="--------------------", 
+                font=FONT, 
+                bg=BACKGROUND_COLOR, 
+                fg="#00CED1"
+            )
             separator.pack()
 
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # Exit button to close the application
-        exit_button = tk.Button(summary_window, text="Exit", command=self.force_quit, font=FONT)
+        exit_button = tk.Button(
+            summary_window, 
+            text="Exit", 
+            command=self.force_quit, 
+            font=FONT,
+            bg="#F44336", 
+            fg="black"
+        )
         exit_button.pack(pady=BUTTON_PADDING)
 
-        # Ensure the summary window stays open until the user closes it
         summary_window.protocol("WM_DELETE_WINDOW", self.force_quit)
-
-        # Keep a reference to the summary window
         self.summary_window = summary_window
 
     def force_quit(self):
-        """Exit the program."""
+        """Exit the application."""
         if hasattr(self, 'summary_window'):
             self.summary_window.destroy()
         self.master.destroy()
         exit()
-
 
 # Main program
 if __name__ == "__main__":
