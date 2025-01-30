@@ -484,9 +484,18 @@ class GuessingGame:
         self.guesses = []
 
         random_index = random.randint(0, len(self.track_uris) - 1)
-        self.current_track = self.track_uris.pop(random_index)
-        self.correct_answer = self.track_names.pop(random_index)
-        self.current_artist = self.track_artists.pop(random_index)
+        
+        #if we want to remove the track from the list after it's been used
+        
+        # self.current_track = self.track_uris.pop(random_index)
+        # self.correct_answer = self.track_names.pop(random_index)
+        # self.current_artist = self.track_artists.pop(random_index)
+        
+        """Shuffle mode"""
+        
+        self.current_track = self.track_uris[random_index]
+        self.correct_answer = self.track_names[random_index]
+        self.current_artist = self.track_artists[random_index]
 
         device_id = self.get_active_device()
         if not device_id:
@@ -671,17 +680,19 @@ class GuessingGame:
             return
 
         self.guesses.append(guess)
-        correct_full = f"{self.correct_answer} by {self.current_artist}".lower()
+        correct_full_lower = f"{self.correct_answer} by {self.current_artist}".lower()
+        correct_full = f"{self.correct_answer} by {self.current_artist}"
         guess_lower = guess.lower()
 
         # Evaluate correctness based on self.game_mode
-        if self.is_correct_guess(guess_lower, correct_full):
+        if self.is_correct_guess(guess_lower,guess, correct_full_lower, correct_full):
             self.flash_feedback("green")
             self.label.config(text=f"Correct! The song was: {self.correct_answer} by {self.current_artist}")
             self.played_songs.append({
                 'song': f"{self.correct_answer} by {self.current_artist}",
                 'guesses': self.guesses.copy(),
-                'result': 'Correct'
+                'result': 'Correct',
+                'time_revealed': self.revealed_seconds
             })
             self.master.after(1000, self.play_random_track)
         else:
@@ -694,7 +705,8 @@ class GuessingGame:
                 self.played_songs.append({
                     'song': f"{self.correct_answer} by {self.current_artist}",
                     'guesses': self.guesses.copy(),
-                    'result': 'Incorrect'
+                    'result': 'Incorrect',
+                    'time_revealed': self.revealed_seconds
                 })
                 self.master.after(2000, self.play_random_track)
             else:
@@ -706,7 +718,7 @@ class GuessingGame:
         self.suggestions.delete(0, tk.END)
         self.entry.focus_set()
 
-    def is_correct_guess(self, guess_lower, correct_full_lower):
+    def is_correct_guess(self, guess_lower, guess, correct_full_lower, correct_full):
         """
         Check correctness differently for each mode.
         We compare 'title' alone or 'title by artist' depending on mode.
@@ -715,15 +727,15 @@ class GuessingGame:
 
         if self.game_mode == "HarderHarder":
             # exact match on "title by artist"
-            return guess_lower == correct_full_lower
+            return guess == correct_full
 
         elif self.game_mode == "Harder":
             # exact match on title or "title by artist"
-            return guess_lower == title_only or guess_lower == correct_full_lower
+            return guess_lower == title_only or guess_lower == correct_full_lower or guess == correct_full
 
         elif self.game_mode == "Hard":
             # allow <= 1 error in the title
-            if levenshtein_distance(guess_lower, title_only) <= 1:
+            if levenshtein_distance(guess, title_only) <= 1:
                 return True
             # or exact match with "title by artist"
             if guess_lower == correct_full_lower:
@@ -819,6 +831,12 @@ class GuessingGame:
                         bg=BACKGROUND_COLOR, fg="white"
                     )
                     guess_item.pack()
+                
+                time_revealed_label = tk.Label(
+                    scroll_frame, text=f"Time Revealed: {song_info['time_revealed']} seconds",
+                    font=FONT, bg=BACKGROUND_COLOR, fg="white"
+                )
+                time_revealed_label.pack()
 
             separator = tk.Label(
                 scroll_frame, text="--------------------",
