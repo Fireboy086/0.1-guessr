@@ -165,19 +165,45 @@ class Button:
 class Dropdown:
     def __init__(self, x, y, width, height, options, font):
         self.rect = pygame.Rect(x - width//2, y - height//2, width, height)
-        self.options = options
+        self.options = [str(opt) for opt in options]  # Convert all options to strings
         self.font = font
-        self.selected_option = options[0]
+        self.selected_option = str(options[0]) if options else ""  # Convert to string
         self.is_open = False
-        self.option_rects = []
+        
+        # Create a ScrollableBox for options with smaller line size
+        dropdown_height = min(200, len(options) * height)  # Max height of 200 pixels
+        self.options_box = ScrollableBox(
+            pygame.Rect(
+                self.rect.x,
+                self.rect.bottom,
+                width,
+                dropdown_height
+            ),
+            font,
+            theme.text,
+            BUTTON_COLOR,
+            border_radius=5,
+            show_separators=True,
+            show_scrollbar=True,
+            text_align="center",
+            line_size=height  # Use the height parameter as line size
+        )
+        self.options_box.set_text(self.options)
 
     def draw(self, surface):
         # Main dropdown box
         pygame.draw.rect(surface, theme.gray, self.rect, border_radius=5)
         pygame.draw.rect(surface, theme.white, self.rect, width=3, border_radius=5)
 
-        # Render selected option
-        text_surface = self.font.render(self.selected_option, True, TEXT_COLOR)
+        # Render selected option with truncation if needed
+        text_surface = self.font.render(str(self.selected_option), True, theme.text)
+        max_width = self.rect.width - 40  # Leave space for arrow and padding
+        if text_surface.get_width() > max_width:
+            truncated_text = str(self.selected_option)
+            while text_surface.get_width() > max_width:
+                truncated_text = truncated_text[:-1]
+                text_surface = self.font.render(truncated_text + "...", True, theme.text)
+        
         text_rect = text_surface.get_rect(center=self.rect.center)
         surface.blit(text_surface, text_rect)
 
@@ -188,34 +214,11 @@ class Dropdown:
             (self.rect.right - 10, self.rect.centery - arrow_size//2),
             (self.rect.right - 15, self.rect.centery + arrow_size//2)
         ]
-        pygame.draw.polygon(surface, TEXT_COLOR, arrow_points)
+        pygame.draw.polygon(surface, theme.text, arrow_points)
 
         # Draw dropdown options if open
         if self.is_open:
-            self.option_rects = []
-            for i, option in enumerate(self.options):
-                option_rect = pygame.Rect(
-                    self.rect.x, 
-                    self.rect.bottom + i * self.rect.height, 
-                    self.rect.width, 
-                    self.rect.height
-                )
-                if option == self.selected_option:
-                    pygame.draw.rect(surface, theme.hover, option_rect, border_radius=5)
-                else:
-                    pygame.draw.rect(surface, BUTTON_COLOR, option_rect, border_radius=5)
-                pygame.draw.rect(surface, theme.white, option_rect, width=3, border_radius=5)
-                
-                option_text = self.font.render(option, True, TEXT_COLOR)
-                option_text_rect = option_text.get_rect(center=option_rect.center)
-                surface.blit(option_text, option_text_rect)
-                
-                self.option_rects.append(option_rect)
-
-            # Draw separator lines between options
-            for i in range(len(self.options) - 1):
-                separator_y = self.rect.bottom + (i + 1) * self.rect.height
-                pygame.draw.line(surface, theme.white, (self.rect.x, separator_y), (self.rect.right, separator_y), 2)
+            self.options_box.draw(surface, "")
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -225,17 +228,33 @@ class Dropdown:
                     self.is_open = not self.is_open
                     return True
 
-                # Select option if dropdown is open
+                # Handle option selection when dropdown is open
                 if self.is_open:
-                    for i, option_rect in enumerate(self.option_rects):
-                        if option_rect.collidepoint(event.pos):
-                            self.selected_option = self.options[i]
-                            self.is_open = False
-                            return True
+                    # Get visible lines from options_box
+                    visible_start = self.options_box.scroll_offset
+                    visible_end = visible_start + (self.options_box.rect.height - 20) // self.options_box.line_size+1
+                    visible_options = self.options_box.text_lines[visible_start:visible_end]
+                    
+                    # Calculate click position relative to visible options
+                    click_y = event.pos[1] - self.options_box.rect.y - 10
+                    option_height = self.options_box.line_size  # Use the correct line size
+                    clicked_index = click_y // option_height
+                    
+                    if 0 <= clicked_index < len(visible_options):
+                        self.selected_option = str(visible_options[clicked_index]['text'])  # Convert to string
+                        self.is_open = False
+                        return True
+
+        # Handle scrolling in options box when open
+        if self.is_open:
+            self.options_box.handle_event(event)
+
         return False
 
 class ScrollableBox:
-    def __init__(self, rect, font, text_color, bg_color, border_radius=0, max_distance=2):
+    def __init__(self, rect, font, text_color, bg_color, border_radius=0, max_distance=2, 
+                 line_color=None, text_align="left", show_separators=True, show_scrollbar=True,
+                 line_size=None):
         self.rect = rect
         self.font = font
         self.text_color = text_color
@@ -243,7 +262,7 @@ class ScrollableBox:
         self.border_radius = border_radius
         self.last_text_input = ""
         self.hide_all_answers = False
-        self.text_lines = []
+        self.text_lines = []  # Will store dictionaries instead of strings
         self.visible_lines = []
         self.scroll_offset = 0
         self.scroll_speed = 1
@@ -251,24 +270,62 @@ class ScrollableBox:
         self.slider_width = 10
         self.is_dragging = False
         self.max_distance = max_distance
-
-    def add_text(self, text):
-        self.text_lines.append(str(text))
+        self.line_color = line_color or self.bg_color  # Default line color is now background color
+        self.text_align = text_align  # "left", "center", "right"
+        self.show_separators = show_separators
+        self.show_scrollbar = show_scrollbar
+        self.line_size = line_size or self.font.get_linesize()  # Use custom line size or font's default
+        self.available_height = self.rect.height
+        self.standartMaxLines = self.available_height // self.line_size+1
+        self.max_lines = self.standartMaxLines
+        
+    def add_text(self, text, text_color=None, line_color=None, line_size=None):
+        line_data = {
+            'text': str(text),
+            'text_color': text_color or self.text_color,
+            'line_color': line_color or self.line_color,
+            'line_size': line_size or self.line_size
+        }
+        self.text_lines.append(line_data)
         self.update_scroll()
+        if len(self.text_lines) > self.standartMaxLines:
+            self.max_lines = self.standartMaxLines-1
         
     def set_text(self, text_list):
-        self.text_lines = [str(item) for item in text_list]
+        # Convert each item to a dictionary if it's not already
+        self.text_lines = []
+        for item in text_list:
+            if isinstance(item, dict):
+                # Ensure all required keys exist with defaults
+                line_data = {
+                    'text': str(item.get('text', '')),
+                    'text_color': item.get('text_color', self.text_color),
+                    'line_color': item.get('line_color', self.line_color),
+                    'line_size': item.get('line_size', self.line_size)
+                }
+                self.text_lines.append(line_data)
+            else:
+                # If it's not a dictionary, create one with default values
+                self.text_lines.append({
+                    'text': str(item),
+                    'text_color': self.text_color,
+                    'line_color': self.line_color,
+                    'line_size': self.line_size
+                })
         self.update_scroll()
-    
+        if len(self.text_lines) > self.standartMaxLines:
+            self.max_lines = self.standartMaxLines-1
+
     def clear_text(self):
         self.text_lines = []
         self.visible_lines = []
+        self.max_lines = self.standartMaxLines
         self.update_scroll()
 
     def update_scroll(self):
-        max_lines = (self.rect.height - 20) // self.font.get_linesize()
-        if len(self.visible_lines) > max_lines:
-            self.scroll_offset = len(self.visible_lines) - max_lines
+        # Calculate max lines based on available height
+        if len(self.visible_lines) > self.max_lines:
+            self.scroll_offset = len(self.visible_lines) - self.max_lines
         else:
             self.scroll_offset = 0
 
@@ -277,84 +334,177 @@ class ScrollableBox:
         pygame.draw.rect(surface, self.bg_color, self.rect, border_radius=self.border_radius)
         
         # Filter text lines based on if input text appears as a substring
-        #filtered_lines = [line for line in self.text_lines if levenshtein_distance(str(line), text_input) <= self.max_distance]
         if text_input == "" and self.hide_all_answers:
             filtered_lines = []
         else:
-            filtered_lines = [line for line in self.text_lines if all(word in line.lower() for word in text_input.lower().split())]
+            filtered_lines = [line for line in self.text_lines 
+                            if all(word in line['text'].lower() 
+                                  for word in text_input.lower().split())]
         
         # Check if the exact match exists
-        if text_input in filtered_lines:
-            exact_match = text_input
-        else:
-            exact_match = None
+        exact_match = next((line for line in filtered_lines 
+                          if line['text'] == text_input), None)
         
         # Move the exact match to the top of the list
         if exact_match is not None:
             filtered_lines.remove(exact_match)
             filtered_lines.insert(0, exact_match)
-            filtered_lines.insert(1, "")
+            filtered_lines.insert(1, {
+                'text': '',
+                'text_color': self.text_color,
+                'line_color': self.line_color,
+                'line_size': self.line_size
+            })
         
         self.visible_lines = filtered_lines
         
-        # Draw text
-        line_height = self.font.get_linesize()
-        max_lines = (self.rect.height - 20) // line_height
+        # Get visible portion of lines
+        visible_lines = filtered_lines[self.scroll_offset:self.scroll_offset + self.max_lines]
         
-        visible_lines = filtered_lines[self.scroll_offset:self.scroll_offset + max_lines]
-        for i, line in enumerate(visible_lines):
-            text_surface = self.font.render(str(line), True, self.text_color)
-            surface.blit(text_surface, (self.rect.x + 10, self.rect.y + 10 + i * line_height))
+        # Draw each line
+        current_y = self.rect.y + 10
+        total_height = 0  
+        for i, line_data in enumerate(visible_lines):
+            # Truncate text if it's too long for the box
+            text_surface = self.font.render(str(line_data['text']), True, line_data['text_color'])
+            max_width = self.rect.width - (40 if self.show_scrollbar else 20)
+            if text_surface.get_width() > max_width:
+                truncated_text = str(line_data['text'])
+                while text_surface.get_width() > max_width:
+                    truncated_text = truncated_text[:-1]
+                    text_surface = self.font.render(truncated_text + "...", True, line_data['text_color'])
+                text_surface = self.font.render(truncated_text + "...", True, line_data['text_color'])
             
+            # Scale font size based on line_size
+            scaled_font = theme.get_font(None,line_data['line_size'])
+            text_surface = scaled_font.render(str(line_data['text']), True, line_data['text_color'])
+            max_width = self.rect.width - (40 if self.show_scrollbar else 20)
+            if text_surface.get_width() > max_width:
+                truncated_text = str(line_data['text'])
+                while text_surface.get_width() > max_width:
+                    truncated_text = truncated_text[:-1]
+                    text_surface = scaled_font.render(truncated_text + "...", True, line_data['text_color'])
+                text_surface = scaled_font.render(truncated_text + "...", True, line_data['text_color'])
             
+            text_rect = text_surface.get_rect()
+            
+            line_height = line_data['line_size']
+            if total_height + line_height > self.available_height:
+                break  # Stop drawing lines if we exceed available height
+            
+            # Handle text alignment
+            if self.text_align == "center":
+                text_rect.centerx = self.rect.centerx
+            elif self.text_align == "right":
+                text_rect.right = self.rect.right - (20 if self.show_scrollbar else 10)
+            else:  # left align
+                text_rect.left = self.rect.x + 10
+            
+            # Calculate Y position with proper padding
+            text_rect.y = current_y
+            surface.blit(text_surface, text_rect)
+            
+            # Update current_y and total_height for next line
+            current_y += line_height
+            total_height += line_height
+
         # Update scroll if text input has changed
         if text_input != self.last_text_input and text_input != "":
             self.update_scroll()
             self.last_text_input = text_input
             
+        # Draw separator lines between lines        
+        if self.show_separators:
+            separator_y = self.rect.y + 5
+            for i, line_data in enumerate(visible_lines[:-1]):  # Don't draw separator after last line
+                separator_y += line_data['line_size']
+                pygame.draw.line(surface, theme.separator, 
+                               (self.rect.x, separator_y), 
+                               (self.rect.right - (15 if self.show_scrollbar and len(self.visible_lines) > self.max_lines else 0), separator_y), 1)
+
+        # Draw scroll bar if enabled
+        if self.show_scrollbar and len(self.visible_lines) > self.max_lines:
+            # Draw scroll bar background
+            scroll_bg_rect = pygame.Rect(
+                self.rect.right - self.slider_width - 5,
+                self.rect.y + 5,
+                self.slider_width,
+                self.rect.height - 10
+            )
+            lighter_bg = tuple(min(c + 30, 255) for c in self.bg_color[:3])
+            pygame.draw.rect(surface, lighter_bg, scroll_bg_rect, border_radius=self.slider_width//2)
+
+            # Draw scroll handle
+            total_scroll_range = max(0, len(self.visible_lines) - self.max_lines)
             
-        # Draw separator lines between lines
-        for i in range(max_lines):
-            separator_y = self.rect.y+5 + (i + 1) * (line_height)
-            pygame.draw.line(surface, theme.separator, (self.rect.x, separator_y), (self.rect.right - 10, separator_y), 1)
+            if total_scroll_range <= 0:
+                handle_height = scroll_bg_rect.height
+            else:
+                handle_height = max(30, scroll_bg_rect.height // (total_scroll_range + 1))
+            
+            scroll_progress = 0 if total_scroll_range <= 0 else self.scroll_offset / total_scroll_range
+            handle_y = scroll_bg_rect.y + scroll_progress * (scroll_bg_rect.height - handle_height)
+            
+            handle_rect = pygame.Rect(
+                scroll_bg_rect.x,
+                handle_y,
+                self.slider_width,
+                handle_height
+            )
+            pygame.draw.rect(surface, theme.primary, handle_rect, border_radius=self.slider_width//2)
 
-        # Draw scroll bar background
-        scroll_bg_rect = pygame.Rect(
-            self.rect.right - self.slider_width - 5,
-            self.rect.y + 5,
-            self.slider_width,
-            self.rect.height - 10
-        )
-        lighter_bg = tuple(min(c + 30, 255) for c in self.bg_color[:3])
-        pygame.draw.rect(surface, lighter_bg, scroll_bg_rect, border_radius=self.slider_width//2)
+    def get_mode_based_suggestions(self, query, options, mode="Normal"):
+        """
+        Return suggestions based on the game mode:
+        Normal Mode: Show partial matches, including artist names
+        Hard Mode: Show only if close match or exact song name
+        Harder Mode: Only exact song name match
+        Expert Mode: Exact "title by artist" match
+        """
+        query = query.lower()
+        results = []
 
-        # Draw scroll handle
-        max_lines = (self.rect.height - 20) // line_height
-        total_scroll_range = max(0, len(self.visible_lines) - max_lines)
-        
-        if total_scroll_range <= 0:
-            handle_height = scroll_bg_rect.height
-        else:
-            handle_height = max(30, scroll_bg_rect.height // (total_scroll_range + 1))
-        
-        scroll_progress = 0 if total_scroll_range <= 0 else self.scroll_offset / total_scroll_range
-        handle_y = scroll_bg_rect.y + scroll_progress * (scroll_bg_rect.height - handle_height)
-        
-        handle_rect = pygame.Rect(
-            scroll_bg_rect.x,
-            handle_y,
-            self.slider_width,
-            handle_height
-        )
-        pygame.draw.rect(surface, theme.primary, handle_rect, border_radius=self.slider_width//2)
+        def title_of(s):
+            return s.lower().split(" by ")[0] if " by " in s else s.lower()
+
+        if mode == "Normal":
+            for item in options:
+                item_lower = str(item).lower()
+                # If query is a substring or within Levenshtein distance <= 2
+                if (query in item_lower) or (levenshtein_distance(query, item_lower) <= 2):
+                    results.append(item)
+
+        elif mode == "Hard":
+            # 1) If there's exactly one partial match for 'query', show that
+            subset = [x for x in options if query in str(x).lower()]
+            if len(subset) == 1:
+                results.append(subset[0])
+            # 2) If the user typed the song name with <=1 error, show it
+            for item in options:
+                dist = levenshtein_distance(query, title_of(str(item)))
+                if dist <= 1 or query == title_of(str(item)):
+                    results.append(item)
+
+        elif mode == "Harder":
+            # Only show if the exact song name matches with no corrections
+            for item in options:
+                if title_of(str(item)) == query:
+                    results.append(item)
+
+        elif mode == "Expert":
+            # Only show if "title by artist" is an exact match
+            for item in options:
+                if str(item).lower() == query:
+                    results.append(item)
+
+        return list(set(results))
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEMOTION:
             self.is_hovered = self.rect.collidepoint(event.pos)
             
             if self.is_dragging:
-                max_lines = (self.rect.height - 20) // self.font.get_linesize()
-                total_scroll_range = max(0, len(self.visible_lines) - max_lines)
+                total_scroll_range = max(0, len(self.visible_lines) - self.max_lines)
                 
                 if total_scroll_range > 0:
                     scroll_area_height = self.rect.height - 10
@@ -381,9 +531,8 @@ class ScrollableBox:
                 self.is_dragging = False
 
         if event.type == pygame.MOUSEWHEEL and self.is_hovered:
-            max_lines = (self.rect.height - 20) // self.font.get_linesize()
             self.scroll_offset -= event.y * self.scroll_speed
-            self.scroll_offset = max(0, min(self.scroll_offset, len(self.visible_lines) - max_lines))
+            self.scroll_offset = max(0, min(self.scroll_offset, len(self.visible_lines) - self.max_lines))
             return True
 
         return False
@@ -482,6 +631,107 @@ class StartScreen:
         
         pygame.display.flip()
 
+class SummaryScreen:
+    def __init__(self, game_data=None):
+        self.setup_widgets(game_data)
+        self._last_draw_time = 0
+        self._min_draw_interval = 16  # ~60 FPS
+
+    def setup_widgets(self, game_data):
+        # Create a large scrollable box for the summary
+        summary_rect = pygame.Rect(
+            theme.padding,
+            theme.padding,
+            SCREEN_WIDTH - 2*theme.padding,
+            SCREEN_HEIGHT - 2*theme.padding - 100  # Leave space for close button
+        )
+        self.summary_box = ScrollableBox(
+            summary_rect,
+            theme.input_font,
+            theme.text,
+            theme.secondary,
+            border_radius=theme.button_radius,
+            line_color=theme.light_gray,
+            text_align="center",
+            show_separators=False,
+            show_scrollbar=True
+        )
+
+        # Add example summary data
+        example_data = [
+            {"text": "Game Summary", "line_size":100},
+            "",
+            "Songs Played: 10",
+            "Correct Guesses: 7",
+            "Total Score: 700",
+            "",
+            "Song History:",
+            {"text": "1. Blinding Lights - The Weekend (Incorrect)", "text_color": theme.error},
+            {"text": "2. Dance Monkey - Tones and I (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent}
+        ]
+        
+        self.summary_box.set_text(example_data)
+
+        # Create close button
+        self.close_button = Button(
+            SCREEN_WIDTH//2,
+            SCREEN_HEIGHT - theme.padding - 25,
+            200,
+            50,
+            "Close",
+            color=theme.error
+        )
+
+    def handle_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+
+            if self.close_button.handle_event(event):
+                return False
+
+            if self.summary_box.handle_event(event):
+                continue
+
+        return True
+
+    def draw(self):
+        current_time = pygame.time.get_ticks()
+        if current_time - self._last_draw_time < self._min_draw_interval:
+            return
+        self._last_draw_time = current_time
+
+        screen.fill(theme.background)
+        
+        # Draw title
+        title_text = theme.title_font.render("Game Summary", True, theme.accent)
+        title_rect = title_text.get_rect(center=(SCREEN_WIDTH//2, 40))
+        screen.blit(title_text, title_rect)
+        
+        # Draw summary box
+        self.summary_box.draw(screen, "")
+        
+        # Draw close button
+        self.close_button.draw(screen)
+        
+        pygame.display.flip()
+
+    def update(self):
+        # No animations to update in summary screen for now
+        pass
+
 class GameScreen:
     def __init__(self):
         self.lives = MAX_LIVES
@@ -503,6 +753,7 @@ class GameScreen:
         self.song_info_fade_out_alpha = 255  # Initial alpha value for fade-out effect
         self.show_play_window = False
         self.show_autoguess_box = True
+        self.show_summary = False
         self.setup_widgets()
         self._last_draw_time = 0
         self._min_draw_interval = 16  # ~60 FPS
@@ -532,7 +783,9 @@ class GameScreen:
             theme.text, 
             theme.secondary, 
             border_radius=theme.button_radius,
-            max_distance = GUESSING_RANGE
+            max_distance = GUESSING_RANGE,
+            line_size=32,
+            text_align="left"  # Set text alignment to left
         )
         
         for i in range(100,1000,10):
@@ -622,36 +875,22 @@ class GameScreen:
             for button in self.buttons:
                 if button.handle_event(event):
                     if button.text == "Replay":
-                        print("Replay pressed")
+                        self.show_play_window = True
+                        self.play_animation(5000)  # Play the animation for 5 seconds
                     elif button.text == "Give Up":
-                        self.lives =max(0, self.lives - 1)
+                        self.lives = max(0, self.lives - 1)
                         self.show_feedback(False)
                         self.update_lives_label()
                         self.show_song_info("Song Title", "Artist Name")
                     elif button.text == "Quit":
                         return False
                     elif button.text == "Summary":
-                        print("Summary pressed")
+                        self.show_summary = True
+                        return False
 
             # Handle scrolling in autoguess box
             if self.autoguess_box.handle_event(event):
                 continue
-
-            # Hotkeys for adjusting lives
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_1:
-                    self.lives = max(0, self.lives - 1)
-                    self.show_feedback(False)
-                    self.update_lives_label()
-                elif event.key == pygame.K_2:
-                    self.lives += 1
-                    self.show_feedback(True)
-                    self.update_lives_label()
-                elif event.key == pygame.K_3:
-                    self.show_song_info("Song Title", "Artist Name")
-                elif event.key == pygame.K_SPACE:
-                    self.show_play_window = True
-                    self.play_animation(5000)  # Play the animation for 5 seconds
 
         return True
 
@@ -882,20 +1121,30 @@ def main():
     # Start with StartScreen
     start_screen = StartScreen()
     running = True
+    current_screen = start_screen
+    
     while running:
         clock.tick(60)  # Limit to 60 FPS
-        running = start_screen.handle_events()
-        start_screen.draw()
         
-        if not running:
-            game_screen = GameScreen()
-            running = True
-            while running:
-                clock.tick(60)  # Limit to 60 FPS
-                running = game_screen.handle_events()
-                game_screen.update()
-                game_screen.draw()
+        if isinstance(current_screen, StartScreen):
+            running = current_screen.handle_events()
+            current_screen.draw()
+            if not running:
+                current_screen = GameScreen()
+                running = True
         
+        elif isinstance(current_screen, GameScreen):
+            running = current_screen.handle_events()
+            if current_screen.show_summary:
+                current_screen = SummaryScreen()
+                running = True
+            current_screen.update()
+            current_screen.draw()
+        
+        elif isinstance(current_screen, SummaryScreen):
+            running = current_screen.handle_events()
+            current_screen.draw()
+    
     pygame.quit()
     sys.exit()
 

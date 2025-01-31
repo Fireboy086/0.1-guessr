@@ -1,4 +1,4 @@
-Spotify Guessing Game
+#Spotify Guessing Game
 i am too lazy to make a readme myself so i used an AI
 
 
