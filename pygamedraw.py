@@ -1,6 +1,6 @@
 import pygame
 import sys
-import time
+# import time
 import math
 from config import *  # Use the same config as main.py
 import pygame.gfxdraw  # For smoother drawing
@@ -33,7 +33,7 @@ class Theme:
         
         # Fonts with caching
         self._font_cache = {}
-        self.title_font = self.get_font(None, 48)
+        self.title_font = self.get_font("cuadra", 100)
         self.button_font = self.get_font(None, 32)
         self.label_font = self.get_font(None, 28)
         self.song_info_font = self.get_font(None, 56)
@@ -63,7 +63,14 @@ class Theme:
     def get_font(self, name, size):
         key = (name, size)
         if key not in self._font_cache:
-            self._font_cache[key] = pygame.font.Font(name, size)
+            if name:
+                font_path = pygame.font.match_font(name)
+                if font_path:
+                    self._font_cache[key] = pygame.font.Font(font_path, size)
+                else:
+                    self._font_cache[key] = pygame.font.Font(None, size)  # Fall back to default system font
+            else:
+                self._font_cache[key] = pygame.font.Font(None, size)  # Use default system font
         return self._font_cache[key]
 
 # Initialize theme
@@ -163,15 +170,15 @@ class Button:
         return False
 
 class Dropdown:
-    def __init__(self, x, y, width, height, options, font):
+    def __init__(self, x, y, width, height, options, font, drop_height=None):
         self.rect = pygame.Rect(x - width//2, y - height//2, width, height)
         self.options = [str(opt) for opt in options]  # Convert all options to strings
         self.font = font
         self.selected_option = str(options[0]) if options else ""  # Convert to string
         self.is_open = False
-        
+        self.drop_height = drop_height or 200
         # Create a ScrollableBox for options with smaller line size
-        dropdown_height = min(200, len(options) * height)  # Max height of 200 pixels
+        dropdown_height = min(self.drop_height, len(options) * height)  # Max height of 200 pixels
         self.options_box = ScrollableBox(
             pygame.Rect(
                 self.rect.x,
@@ -190,10 +197,10 @@ class Dropdown:
         )
         self.options_box.set_text(self.options)
 
-    def draw(self, surface):
+    def draw(self, surface, out_color):
         # Main dropdown box
         pygame.draw.rect(surface, theme.gray, self.rect, border_radius=5)
-        pygame.draw.rect(surface, theme.white, self.rect, width=3, border_radius=5)
+        pygame.draw.rect(surface, out_color, self.rect, width=3, border_radius=5)
 
         # Render selected option with truncation if needed
         text_surface = self.font.render(str(self.selected_option), True, theme.text)
@@ -218,7 +225,7 @@ class Dropdown:
 
         # Draw dropdown options if open
         if self.is_open:
-            self.options_box.draw(surface, "")
+            self.options_box.draw(surface, "", out_color)
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -254,7 +261,7 @@ class Dropdown:
 class ScrollableBox:
     def __init__(self, rect, font, text_color, bg_color, border_radius=0, max_distance=2, 
                  line_color=None, text_align="left", show_separators=True, show_scrollbar=True,
-                 line_size=None):
+                 line_size=None,max_height=None):
         self.rect = rect
         self.font = font
         self.text_color = text_color
@@ -278,7 +285,7 @@ class ScrollableBox:
         self.available_height = self.rect.height
         self.standartMaxLines = self.available_height // self.line_size+1
         self.max_lines = self.standartMaxLines
-        
+        self.max_height = max_height or self.available_height
     def add_text(self, text, text_color=None, line_color=None, line_size=None):
         line_data = {
             'text': str(text),
@@ -329,9 +336,13 @@ class ScrollableBox:
         else:
             self.scroll_offset = 0
 
-    def draw(self, surface, text_input):
+    def draw(self, surface, text_input, out_color=None):
         # Draw main box
         pygame.draw.rect(surface, self.bg_color, self.rect, border_radius=self.border_radius)
+        
+        # Draw outline if out_color is provided and not the default color
+        if out_color and out_color != (0, 0, 0):  # Default color is black (0, 0, 0)
+            pygame.draw.rect(surface, out_color, self.rect, width=3, border_radius=self.border_radius)
         
         # Filter text lines based on if input text appears as a substring
         if text_input == "" and self.hide_all_answers:
@@ -418,6 +429,8 @@ class ScrollableBox:
             separator_y = self.rect.y + 5
             for i, line_data in enumerate(visible_lines[:-1]):  # Don't draw separator after last line
                 separator_y += line_data['line_size']
+                if separator_y-self.rect.y > self.max_height:
+                    break
                 pygame.draw.line(surface, theme.separator, 
                                (self.rect.x, separator_y), 
                                (self.rect.right - (15 if self.show_scrollbar and len(self.visible_lines) > self.max_lines else 0), separator_y), 1)
@@ -499,7 +512,7 @@ class ScrollableBox:
 
         return list(set(results))
 
-    def handle_event(self, event):
+    def handle_event(self, event, game_screen=None):
         if event.type == pygame.MOUSEMOTION:
             self.is_hovered = self.rect.collidepoint(event.pos)
             
@@ -516,6 +529,23 @@ class ScrollableBox:
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
+                if self.rect.collidepoint(event.pos):
+                    # Get visible lines
+                    visible_start = self.scroll_offset
+                    visible_end = visible_start + self.max_lines
+                    visible_options = self.visible_lines[visible_start:visible_end]
+                    
+                    # Calculate click position relative to visible options
+                    click_y = event.pos[1] - self.rect.y - 10
+                    option_height = self.line_size
+                    clicked_index = click_y // option_height
+                    
+                    if 0 <= clicked_index < len(visible_options):
+                        selected_option = visible_options[clicked_index]['text']
+                        if game_screen:
+                            game_screen.input_text = selected_option
+                        return True
+
                 scroll_bar_rect = pygame.Rect(
                     self.rect.right - self.slider_width - 5,
                     self.rect.y + 5,
@@ -541,7 +571,7 @@ class StartScreen:
     def __init__(self):
         self.game_modes = ["Normal", "Hard", "Harder", "Extreme"]
         self.selected_mode = "Normal"
-        self.playlist_options = ["Liked Songs", "Custom Playlist"]
+        self.playlist_options = ["Liked Songs", "Custom Playlist","abhsbdahsdashdashdjashdljahsdlhalsdhald0","01982750126509729375012357","!#^!#%^@$*&%&(&(*)&(&&#@#^","DFGWERTVGWYAWSRYTBSVUYSVETBVY"]
         self.selected_playlist = "Liked Songs"
 
         # Create widgets
@@ -551,9 +581,10 @@ class StartScreen:
         # Mode Selection Dropdown
         self.mode_dropdown = Dropdown(
             x=SCREEN_WIDTH//2, 
-            y=300, 
+            y=200, 
             width=300, 
             height=40,
+            drop_height = 200,
             options=self.game_modes, 
             font=theme.button_font
         )
@@ -561,7 +592,7 @@ class StartScreen:
         # Playlist Selection Dropdown
         self.playlist_dropdown = Dropdown(
             x=SCREEN_WIDTH//2, 
-            y=400, 
+            y=300, 
             width=300, 
             height=40,
             options=self.playlist_options, 
@@ -578,6 +609,14 @@ class StartScreen:
             color=theme.primary,
             hover_color=theme.hover
         )
+
+    def get_title_color(self):
+        # Generate a smooth color gradient based on the current time
+        current_time = pygame.time.get_ticks()
+        r = (math.sin(current_time * 0.001) + 1) / 2 * 200 + 55 # Range 55-255
+        g = (math.sin(current_time * 0.002) + 1) / 2 * 200 + 55 # Range 55-255  
+        b = (math.sin(current_time * 0.003) + 1) / 2 * 200 + 55 # Range 55-255
+        return (int(r), int(g), int(b))
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -609,25 +648,26 @@ class StartScreen:
     def draw(self):
         screen.fill(theme.background)
         
-        # Draw title
-        title_text = theme.title_font.render("Music Guesser", True, theme.accent)
-        title_rect = title_text.get_rect(center=(SCREEN_WIDTH//2, 100))
+        # Draw title with color cycling effect
+        title_color = self.get_title_color()
+        title_text = theme.title_font.render("Music Guesser", True, title_color)
+        title_rect = title_text.get_rect(center=(SCREEN_WIDTH//2, 75))
         screen.blit(title_text, title_rect)
         
         # Draw mode dropdown label
         mode_label = theme.label_font.render("Select Game Mode:", True, theme.text)
-        mode_label_rect = mode_label.get_rect(center=(SCREEN_WIDTH//2, 250))
+        mode_label_rect = mode_label.get_rect(center=(SCREEN_WIDTH//2, 150))
         screen.blit(mode_label, mode_label_rect)
         
         # Draw playlist dropdown label
         playlist_label = theme.label_font.render("Select Playlist:", True, theme.text)
-        playlist_label_rect = playlist_label.get_rect(center=(SCREEN_WIDTH//2, 350))
+        playlist_label_rect = playlist_label.get_rect(center=(SCREEN_WIDTH//2, 250))
         screen.blit(playlist_label, playlist_label_rect)
         
         # Draw widgets in correct order
         self.start_button.draw(screen)
-        self.playlist_dropdown.draw(screen)
-        self.mode_dropdown.draw(screen)
+        self.playlist_dropdown.draw(screen,title_color)
+        self.mode_dropdown.draw(screen,title_color)
         
         pygame.display.flip()
 
@@ -653,7 +693,7 @@ class SummaryScreen:
             border_radius=theme.button_radius,
             line_color=theme.light_gray,
             text_align="center",
-            show_separators=False,
+            show_separators=True,
             show_scrollbar=True
         )
 
@@ -668,9 +708,6 @@ class SummaryScreen:
             "Song History:",
             {"text": "1. Blinding Lights - The Weekend (Incorrect)", "text_color": theme.error},
             {"text": "2. Dance Monkey - Tones and I (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
             {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
             {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
             {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
@@ -715,10 +752,10 @@ class SummaryScreen:
 
         screen.fill(theme.background)
         
-        # Draw title
-        title_text = theme.title_font.render("Game Summary", True, theme.accent)
-        title_rect = title_text.get_rect(center=(SCREEN_WIDTH//2, 40))
-        screen.blit(title_text, title_rect)
+        # # Draw title
+        # title_text = theme.title_font.render("Game Summary", True, theme.accent)
+        # title_rect = title_text.get_rect(center=(SCREEN_WIDTH//2, 40))
+        # screen.blit(title_text, title_rect)
         
         # Draw summary box
         self.summary_box.draw(screen, "")
@@ -757,6 +794,9 @@ class GameScreen:
         self.setup_widgets()
         self._last_draw_time = 0
         self._min_draw_interval = 16  # ~60 FPS
+        self.last_key_press_time = 0
+        self.last_key_spam_time = 0
+        self.held_key = None
 
     def setup_widgets(self):
         # Input Box
@@ -862,14 +902,19 @@ class GameScreen:
                     self.process_input(self.input_text)
                     self.input_text = ""
                 elif event.key == pygame.K_BACKSPACE:
-                    self.input_text = self.input_text[:-1]
+                    if pygame.key.get_mods() & (pygame.KMOD_CTRL | pygame.KMOD_CMD):
+                        # Clear the entire input text if Ctrl or Cmd is held
+                        self.input_text = ""
+                    else:
+                        self.input_text = self.input_text[:-1]
                 else:
                     self.input_text += event.unicode
-            
-            if self.input_text == "" and not self.active:
-                self.ghost_text = "Type here..."
-            else:
-                self.ghost_text = ""
+                    self.last_key_press_time = pygame.time.get_ticks()
+                    self.held_key = event.unicode
+
+            if event.type == pygame.KEYUP:
+                if event.key == self.held_key:
+                    self.held_key = None
 
             # Handle buttons
             for button in self.buttons:
@@ -889,8 +934,20 @@ class GameScreen:
                         return False
 
             # Handle scrolling in autoguess box
-            if self.autoguess_box.handle_event(event):
+            if self.autoguess_box.handle_event(event, game_screen=self):
                 continue
+
+        current_time = pygame.time.get_ticks()
+        if self.held_key is not None and current_time - self.last_key_press_time >= 500:
+            # Start spamming the held key after 0.5 seconds
+            if current_time - self.last_key_spam_time >= 100:
+                self.input_text += self.held_key
+                self.last_key_spam_time = current_time
+
+        if self.input_text == "" and not self.active:
+            self.ghost_text = "Type here..."
+        else:
+            self.ghost_text = ""
 
         return True
 
@@ -951,8 +1008,16 @@ class GameScreen:
         
         # Draw input box
         pygame.draw.rect(screen, theme.secondary, self.input_box, border_radius=theme.button_radius)
-        input_surface = theme.input_font.render(self.input_text, True, theme.text)
+
+        # Calculate the maximum number of characters that can fit within the input box width
+        max_chars = (self.input_box.width) // theme.input_font.size("A")[0]  # Approximate width of a character
+
+        # Get the visible portion of the input text
+        visible_input_text = self.input_text[-max_chars:]  # Slice the input text to get the last max_chars characters
+
+        input_surface = theme.input_font.render(visible_input_text, True, theme.text)
         ghost_text_surface = theme.input_font.render(self.ghost_text, True, theme.ghost_text)
+
         screen.blit(input_surface, (self.input_box.x + 10, self.input_box.y + 10))
         screen.blit(ghost_text_surface, (self.input_box.x + 10, self.input_box.y + 10))
         
