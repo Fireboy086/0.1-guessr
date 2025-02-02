@@ -55,3 +55,6 @@ def load_spotify_credentials():
         return client_id, client_secret, redirect_uri
     else:
         return None, None, None
+
+if __name__ == "__main__":
+    setup_spotify_credentials()

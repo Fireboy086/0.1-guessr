@@ -244,7 +244,7 @@ class Dropdown:
                     
                     # Calculate click position relative to visible options
                     click_y = event.pos[1] - self.options_box.rect.y - 10
-                    option_height = self.options_box.line_size  # Use the correct line size
+                    option_height = self.options_box.line_size
                     clicked_index = click_y // option_height
                     
                     if 0 <= clicked_index < len(visible_options):
@@ -716,6 +716,8 @@ class SummaryScreen:
             {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
             {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
             {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
+            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
             {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent}
         ]
         
@@ -794,10 +796,15 @@ class GameScreen:
         self.setup_widgets()
         self._last_draw_time = 0
         self._min_draw_interval = 16  # ~60 FPS
-        self.last_key_press_time = 0
-        self.last_key_spam_time = 0
-        self.held_key = None
-
+        self.pressing_button = []
+        self.pressing_key = []
+        self.current_button = ""
+        self.current_key = ""
+        self.spam_timer = 0
+        self.holding_button = False
+        self.spamming = False
+        self.pressing_cmd = False
+        
     def setup_widgets(self):
         # Input Box
         self.input_box = pygame.Rect(
@@ -886,68 +893,74 @@ class GameScreen:
 
     def handle_events(self):
         for event in pygame.event.get():
+            # Handle window close
             if event.type == pygame.QUIT:
                 return False
             
-            # Handle input box
+            # Handle mouse clicks on input box
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if self.input_box.collidepoint(event.pos):
-                    self.active = True
-                else:
-                    self.active = False
+                self.active = self.input_box.collidepoint(event.pos)
 
+            # Handle keyboard input when input box is active
             if event.type == pygame.KEYDOWN and self.active:
                 if event.key == pygame.K_RETURN:
-                    # Process input
+                    # Submit input
                     self.process_input(self.input_text)
                     self.input_text = ""
+                    
                 elif event.key == pygame.K_BACKSPACE:
-                    if pygame.key.get_mods() & (pygame.KMOD_CTRL | pygame.KMOD_CMD):
-                        # Clear the entire input text if Ctrl or Cmd is held
+                    # Clear all text if cmd pressed, otherwise delete last char
+                    if 1073742048 in self.pressing_key or 1073742051 in self.pressing_key:
                         self.input_text = ""
                     else:
                         self.input_text = self.input_text[:-1]
                 else:
-                    self.input_text += event.unicode
-                    self.last_key_press_time = pygame.time.get_ticks()
-                    self.held_key = event.unicode
+                    self.input_text += event.unicode    
+                
+                # Track pressed keys and handle text input
+                if event.unicode not in self.pressing_button:
+                    self.pressing_button.append(event.unicode)
+                    
+                if event.key not in self.pressing_key:
+                    self.pressing_key.append(event.key)
+                    
+                if event.key != self.current_key or event.unicode != self.current_button:
+                    self.current_key = event.key
+                    self.current_button = event.unicode
+                    self.spam_timer = 0
+            
+            # Handle key releases
+            if event.type == pygame.KEYUP and self.active:
+                if event.unicode in self.pressing_button:
+                    self.pressing_button.remove(event.unicode)
+                if event.key in self.pressing_key:
+                    self.pressing_key.remove(event.key)
+            # Update ghost text
+            self.ghost_text = "Type here..." if self.input_text == "" and not self.active else ""
 
-            if event.type == pygame.KEYUP:
-                if event.key == self.held_key:
-                    self.held_key = None
-
-            # Handle buttons
+            # Handle button clicks
             for button in self.buttons:
                 if button.handle_event(event):
                     if button.text == "Replay":
                         self.show_play_window = True
-                        self.play_animation(5000)  # Play the animation for 5 seconds
+                        self.play_animation(5000)
+                        
                     elif button.text == "Give Up":
                         self.lives = max(0, self.lives - 1)
                         self.show_feedback(False)
                         self.update_lives_label()
                         self.show_song_info("Song Title", "Artist Name")
+                        
                     elif button.text == "Quit":
                         return False
+                        
                     elif button.text == "Summary":
                         self.show_summary = True
                         return False
 
-            # Handle scrolling in autoguess box
+            # Handle autoguess box scrolling
             if self.autoguess_box.handle_event(event, game_screen=self):
                 continue
-
-        current_time = pygame.time.get_ticks()
-        if self.held_key is not None and current_time - self.last_key_press_time >= 500:
-            # Start spamming the held key after 0.5 seconds
-            if current_time - self.last_key_spam_time >= 100:
-                self.input_text += self.held_key
-                self.last_key_spam_time = current_time
-
-        if self.input_text == "" and not self.active:
-            self.ghost_text = "Type here..."
-        else:
-            self.ghost_text = ""
 
         return True
 
@@ -967,6 +980,30 @@ class GameScreen:
             self.feedback_alpha = int(255 * (1 - elapsed_time / self.feedback_duration))
         else:
             self.feedback_alpha = 0
+        
+        
+        # Spam timer
+        if self.pressing_button or self.pressing_key:
+            if self.spam_timer > 30 or (self.spamming and self.spam_timer > 2):
+                if self.current_key == 8:
+                    if 1073742048 in self.pressing_key or 1073742051 in self.pressing_key:
+                        self.input_text = ""
+                    else:
+                        self.input_text = self.input_text[:-1]
+                        
+                else:
+                    self.input_text = self.input_text + self.current_button
+                self.spam_timer = 0
+                self.spamming = True
+                # print(f"spamming button {self.current_button}")
+            else:
+                self.spam_timer += 1
+                if not self.spamming:
+                    pass
+                    # print(f"holding button {self.current_button} with a time of {self.spam_timer} Frames")
+        else:
+            self.spam_timer = 0
+            self.spamming = False
 
         # Update song info animation
         if self.song_info_visible:
@@ -1009,12 +1046,24 @@ class GameScreen:
         # Draw input box
         pygame.draw.rect(screen, theme.secondary, self.input_box, border_radius=theme.button_radius)
 
-        # Calculate the maximum number of characters that can fit within the input box width
-        max_chars = (self.input_box.width) // theme.input_font.size("A")[0]  # Approximate width of a character
+        # First render the full text to check its width
+        input_surface = theme.input_font.render(self.input_text, True, theme.text)
+        max_width = self.input_box.width - 20  # Account for padding
 
-        # Get the visible portion of the input text
-        visible_input_text = self.input_text[-max_chars:]  # Slice the input text to get the last max_chars characters
+        # If text is too wide, calculate how many characters to show
+        if input_surface.get_width() > max_width:
+            # Start with full text and remove characters from start until it fits
+            test_text = self.input_text
+            while len(test_text) > 0:
+                test_surface = theme.input_font.render(test_text, True, theme.text)
+                if test_surface.get_width() <= max_width:
+                    break
+                test_text = test_text[1:]
+            visible_input_text = test_text
+        else:
+            visible_input_text = self.input_text
 
+        # Render the final visible text
         input_surface = theme.input_font.render(visible_input_text, True, theme.text)
         ghost_text_surface = theme.input_font.render(self.ghost_text, True, theme.ghost_text)
 
