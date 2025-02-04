@@ -106,7 +106,7 @@ class PlaylistSelector:
         )
         self.label.pack(pady=BUTTON_PADDING)
 
-        # ----- Fetch user playlists (unchanged) -----
+        # ----- Fetch user playlists -----
         self.playlists = get_user_playlists()
         self.playlist_options = [playlist['name'] for playlist in self.playlists]
         self.playlist_ids = {playlist['name']: playlist['id'] for playlist in self.playlists}

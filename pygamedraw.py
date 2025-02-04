@@ -567,6 +567,147 @@ class ScrollableBox:
 
         return False
 
+class InputBox:
+    def __init__(self, x, y, width, height, ghost_text="Type here...", font=None):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.text = ""
+        self.ghost_text = ghost_text
+        self.active = False
+        self.font = font or theme.input_font
+        self.pressing_button = []
+        self.pressing_key = []
+        self.current_button = ""
+        self.current_key = ""
+        self.spam_timer = 0
+        self.spamming = False
+    
+    @property
+    def bottom(self):
+        return self.rect.bottom
+        
+    @property
+    def top(self):
+        return self.rect.top
+        
+    @property
+    def left(self):
+        return self.rect.left
+        
+    @property
+    def right(self):
+        return self.rect.right
+        
+    @property
+    def width(self):
+        return self.rect.width
+        
+    @property
+    def height(self):
+        return self.rect.height
+        
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            # Handle mouse clicks
+            was_active = self.active
+            self.active = self.rect.collidepoint(event.pos)
+            return was_active != self.active
+            
+        if event.type == pygame.KEYDOWN and self.active:
+            if event.key == pygame.K_RETURN:
+                # Return True if enter was pressed to handle submission
+                return True
+                
+            elif event.key == pygame.K_BACKSPACE:
+                # Clear all text if cmd pressed, otherwise delete last char
+                if 1073742048 in self.pressing_key or 1073742051 in self.pressing_key:
+                    self.text = ""
+                else:
+                    self.text = self.text[:-1]
+            else:
+                self.text += event.unicode
+                
+            # Track pressed keys
+            if event.unicode not in self.pressing_button:
+                self.pressing_button.append(event.unicode)
+                
+            if event.key not in self.pressing_key:
+                self.pressing_key.append(event.key)
+                
+            if event.key != self.current_key or event.unicode != self.current_button:
+                self.current_key = event.key
+                self.current_button = event.unicode
+                self.spam_timer = 0
+                
+        if event.type == pygame.KEYUP and self.active:
+            if event.unicode in self.pressing_button:
+                self.pressing_button.remove(event.unicode)
+            if event.key in self.pressing_key:
+                self.pressing_key.remove(event.key)
+                
+        return False
+    
+    def update(self):
+        # Handle key spam/repeat logic
+        if self.pressing_button or self.pressing_key:
+            if self.spam_timer > 30 or (self.spamming and self.spam_timer > 2):
+                if self.current_key == 8:  # Backspace
+                    if 1073742048 in self.pressing_key or 1073742051 in self.pressing_key:
+                        self.text = ""
+                    else:
+                        self.text = self.text[:-1]
+                else:
+                    self.text = self.text + self.current_button
+                self.spam_timer = 0
+                self.spamming = True
+            else:
+                self.spam_timer += 1
+        else:
+            self.spam_timer = 0
+            self.spamming = False
+    
+    def draw(self, surface):
+        # Draw input box background
+        pygame.draw.rect(surface, theme.secondary, self.rect, border_radius=theme.button_radius)
+        
+        # First render the full text to check its width
+        input_surface = self.font.render(self.text, True, theme.text)
+        max_width = self.rect.width - 20  # Account for padding
+        
+        # If text is too wide, calculate how many characters to show
+        if input_surface.get_width() > max_width:
+            test_text = self.text
+            while len(test_text) > 0:
+                test_surface = self.font.render(test_text, True, theme.text)
+                if test_surface.get_width() <= max_width:
+                    break
+                test_text = test_text[1:]
+            visible_text = test_text
+        else:
+            visible_text = self.text
+            
+        # Render the final visible text
+        input_surface = self.font.render(visible_text, True, theme.text)
+        ghost_text_surface = self.font.render(
+            self.ghost_text if self.text == "" and not self.active else "", 
+            True, 
+            theme.ghost_text
+        )
+        
+        # Draw text
+        surface.blit(input_surface, (self.rect.x + 10, self.rect.y + 10))
+        surface.blit(ghost_text_surface, (self.rect.x + 10, self.rect.y + 10))
+        
+        # Draw typing indicator
+        if self.active:
+            if (pygame.time.get_ticks() // 500) % 2 == 0:  # Blink every 500ms
+                indicator_rect = pygame.Rect(
+                    self.rect.left + 10 + input_surface.get_width(),
+                    self.rect.y + 10,
+                    2,  # Make cursor thinner
+                    self.rect.height - 20
+                )
+                pygame.draw.rect(surface, theme.accent, indicator_rect)
+
 class StartScreen:
     def __init__(self):
         self.game_modes = ["Normal", "Hard", "Harder", "Extreme"]
@@ -693,32 +834,13 @@ class SummaryScreen:
             border_radius=theme.button_radius,
             line_color=theme.light_gray,
             text_align="center",
-            show_separators=True,
+            show_separators=False,
             show_scrollbar=True
         )
 
         # Add example summary data
         example_data = [
-            {"text": "Game Summary", "line_size":100},
-            "",
-            "Songs Played: 10",
-            "Correct Guesses: 7",
-            "Total Score: 700",
-            "",
-            "Song History:",
-            {"text": "1. Blinding Lights - The Weekend (Incorrect)", "text_color": theme.error},
-            {"text": "2. Dance Monkey - Tones and I (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent},
-            {"text": "3. Uptown Funk - Bruno Mars (Correct)", "text_color": theme.accent}
+            {"text": "Game Summary", "line_size":100}
         ]
         
         self.summary_box.set_text(example_data)
@@ -807,15 +929,13 @@ class GameScreen:
         
     def setup_widgets(self):
         # Input Box
-        self.input_box = pygame.Rect(
-            theme.padding, 
-            100, 
-            SCREEN_WIDTH - 2*theme.padding, 
-            theme.input_height
+        self.input_box = InputBox(
+            theme.padding,
+            100,
+            SCREEN_WIDTH - 2*theme.padding,
+            theme.input_height,
+            ghost_text="Type here..."
         )
-        self.input_text = ""
-        self.ghost_text = "Type here..."
-        self.active = False
 
         # Autoguess Window
         autoguess_rect = pygame.Rect(
@@ -835,9 +955,6 @@ class GameScreen:
             text_align="left"  # Set text alignment to left
         )
         
-        for i in range(100,1000,10):
-            self.autoguess_box.add_text(i)
-
         # Buttons
         button_width = 150
         button_spacing = (SCREEN_WIDTH - 4*button_width) // 5
@@ -893,50 +1010,14 @@ class GameScreen:
 
     def handle_events(self):
         for event in pygame.event.get():
-            # Handle window close
             if event.type == pygame.QUIT:
                 return False
             
-            # Handle mouse clicks on input box
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                self.active = self.input_box.collidepoint(event.pos)
-
-            # Handle keyboard input when input box is active
-            if event.type == pygame.KEYDOWN and self.active:
-                if event.key == pygame.K_RETURN:
-                    # Submit input
-                    self.process_input(self.input_text)
-                    self.input_text = ""
-                    
-                elif event.key == pygame.K_BACKSPACE:
-                    # Clear all text if cmd pressed, otherwise delete last char
-                    if 1073742048 in self.pressing_key or 1073742051 in self.pressing_key:
-                        self.input_text = ""
-                    else:
-                        self.input_text = self.input_text[:-1]
-                else:
-                    self.input_text += event.unicode    
-                
-                # Track pressed keys and handle text input
-                if event.unicode not in self.pressing_button:
-                    self.pressing_button.append(event.unicode)
-                    
-                if event.key not in self.pressing_key:
-                    self.pressing_key.append(event.key)
-                    
-                if event.key != self.current_key or event.unicode != self.current_button:
-                    self.current_key = event.key
-                    self.current_button = event.unicode
-                    self.spam_timer = 0
-            
-            # Handle key releases
-            if event.type == pygame.KEYUP and self.active:
-                if event.unicode in self.pressing_button:
-                    self.pressing_button.remove(event.unicode)
-                if event.key in self.pressing_key:
-                    self.pressing_key.remove(event.key)
-            # Update ghost text
-            self.ghost_text = "Type here..." if self.input_text == "" and not self.active else ""
+            # Handle input box events
+            if self.input_box.handle_event(event):
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
+                    self.process_input(self.input_box.text)
+                    self.input_box.text = ""
 
             # Handle button clicks
             for button in self.buttons:
@@ -981,30 +1062,9 @@ class GameScreen:
         else:
             self.feedback_alpha = 0
         
+        # Update input box
+        self.input_box.update()
         
-        # Spam timer
-        if self.pressing_button or self.pressing_key:
-            if self.spam_timer > 30 or (self.spamming and self.spam_timer > 2):
-                if self.current_key == 8:
-                    if 1073742048 in self.pressing_key or 1073742051 in self.pressing_key:
-                        self.input_text = ""
-                    else:
-                        self.input_text = self.input_text[:-1]
-                        
-                else:
-                    self.input_text = self.input_text + self.current_button
-                self.spam_timer = 0
-                self.spamming = True
-                # print(f"spamming button {self.current_button}")
-            else:
-                self.spam_timer += 1
-                if not self.spamming:
-                    pass
-                    # print(f"holding button {self.current_button} with a time of {self.spam_timer} Frames")
-        else:
-            self.spam_timer = 0
-            self.spamming = False
-
         # Update song info animation
         if self.song_info_visible:
             current_time = pygame.time.get_ticks()
@@ -1044,46 +1104,11 @@ class GameScreen:
         screen.blit(self.lives_label, self.lives_label_rect)
         
         # Draw input box
-        pygame.draw.rect(screen, theme.secondary, self.input_box, border_radius=theme.button_radius)
-
-        # First render the full text to check its width
-        input_surface = theme.input_font.render(self.input_text, True, theme.text)
-        max_width = self.input_box.width - 20  # Account for padding
-
-        # If text is too wide, calculate how many characters to show
-        if input_surface.get_width() > max_width:
-            # Start with full text and remove characters from start until it fits
-            test_text = self.input_text
-            while len(test_text) > 0:
-                test_surface = theme.input_font.render(test_text, True, theme.text)
-                if test_surface.get_width() <= max_width:
-                    break
-                test_text = test_text[1:]
-            visible_input_text = test_text
-        else:
-            visible_input_text = self.input_text
-
-        # Render the final visible text
-        input_surface = theme.input_font.render(visible_input_text, True, theme.text)
-        ghost_text_surface = theme.input_font.render(self.ghost_text, True, theme.ghost_text)
-
-        screen.blit(input_surface, (self.input_box.x + 10, self.input_box.y + 10))
-        screen.blit(ghost_text_surface, (self.input_box.x + 10, self.input_box.y + 10))
+        self.input_box.draw(screen)
         
-        # Draw typing indicator
-        if self.active:
-            # Blink every 30 frames (2 times per second at 60fps)
-            if (pygame.time.get_ticks() // 500) % 2 == 0:  # 500ms = half second
-                indicator_rect = pygame.Rect(
-                    self.input_box.left + 10 + input_surface.get_width(),
-                    self.input_box.y + 10,
-                    10,
-                    self.input_box.height - 20
-                )
-                pygame.draw.rect(screen, theme.accent, indicator_rect)
         # Draw autoguess window or empty window based on show_play_window flag
         if not self.show_play_window or self.show_autoguess_box:
-            self.autoguess_box.draw(screen, self.input_text)
+            self.autoguess_box.draw(screen, self.input_box.text)
         else:
             empty_window_rect = pygame.Rect(
                 theme.padding,
