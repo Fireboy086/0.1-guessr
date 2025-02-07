@@ -33,7 +33,8 @@ class GameLogic:
         self.score = 0
         self.lives = MAX_LIVES
         self.game_mode = "Normal"  # Default game mode
-
+        self.typed = True
+        
     def get_user_playlists(self):
         playlists = []
         limit = 50
@@ -147,13 +148,14 @@ class GameLogic:
         self.current_track_index = random.randint(0, len(self.track_names) - 1)
         self.current_track_name = self.track_names[self.current_track_index]
         self.current_track_artist = self.track_artists[self.current_track_index]
+        print(self.current_track_name, self.current_track_artist)
         return self.current_track_name, self.current_track_artist
 
-    def check_guess(self, guess, typed=False):
+    def check_guess(self, guess):
         if not guess:
             return False, 0, "Please enter a song name"
 
-        bonus_multiplier = 2 if typed else 1
+        bonus_multiplier = 2 if self.typed else 1
         guess_lower = guess.lower()
         
         if guess_lower == self.current_track_name.lower():
@@ -164,9 +166,9 @@ class GameLogic:
             points = 10 * bonus_multiplier
             message = f"Correct! {points} points!" + (" (Typed bonus!)" if bonus_multiplier > 1 else "")
             return True, points, message
-        
-        self.lives -= 1
-        return False, 0, "Incorrect guess"
+        else:
+            self.lives = max(0, self.lives - 1)
+            return False, 0, "Incorrect guess"
 
     def get_game_mode_rules(self, mode):
         def normal_rule(query, item):
@@ -219,3 +221,8 @@ class GameLogic:
 
     def set_game_mode(self, mode):
         self.game_mode = mode 
+        
+        
+if __name__ == "__main__":
+    import main as M
+    M.main()
