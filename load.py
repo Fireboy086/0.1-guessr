@@ -3,17 +3,17 @@
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from config import *
-import setup
+import Setupify
 import sys
 
 # Load Spotify credentials
-client_id, client_secret, redirect_uri = setup.load_spotify_credentials()
+client_id, client_secret, redirect_uri = Setupify.load_spotify_credentials()
 
 if not client_id or not client_secret:
     # Credentials are missing; initiate setup
-    setup.setup_spotify_credentials()
+    Setupify.setup_spotify_credentials()
     # Reload credentials after setup
-    client_id, client_secret, redirect_uri = setup.load_spotify_credentials()
+    client_id, client_secret, redirect_uri = Setupify.load_spotify_credentials()
     if not client_id or not client_secret:
         print("Spotify credentials are required to run the application.")
         sys.exit(1)

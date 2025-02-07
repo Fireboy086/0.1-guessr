@@ -2,13 +2,19 @@ import pygame
 import sys
 # import time
 import math
-from config import *  # Use the same config as main.py
+from config import *
 import pygame.gfxdraw  # For smoother drawing
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+import random
+import re
+from load import *
 
 # Initialize Pygame with optimized settings
 pygame.init()
 pygame.mixer.pre_init(44100, -16, 2, 2048)  # Optimize sound
 pygame.event.set_allowed([pygame.QUIT, pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEMOTION])
+pygame.scrap.init()  # Initialize clipboard functionality
 
 # Screen Setup with double buffering
 SCREEN_WIDTH = 800
@@ -173,7 +179,7 @@ class Dropdown:
     def __init__(self, x, y, width, height, options, font, drop_height=None):
         self.rect = pygame.Rect(x - width//2, y - height//2, width, height)
         self.options = [str(opt) for opt in options]  # Convert all options to strings
-        self.font = font
+        self.selected_font = theme.get_font(None, height - 4)
         self.selected_option = str(options[0]) if options else ""  # Convert to string
         self.is_open = False
         self.drop_height = drop_height or 200
@@ -203,13 +209,13 @@ class Dropdown:
         pygame.draw.rect(surface, out_color, self.rect, width=3, border_radius=5)
 
         # Render selected option with truncation if needed
-        text_surface = self.font.render(str(self.selected_option), True, theme.text)
+        text_surface = self.selected_font.render(str(self.selected_option), True, theme.text)
         max_width = self.rect.width - 40  # Leave space for arrow and padding
         if text_surface.get_width() > max_width:
             truncated_text = str(self.selected_option)
             while text_surface.get_width() > max_width:
                 truncated_text = truncated_text[:-1]
-                text_surface = self.font.render(truncated_text + "...", True, theme.text)
+                text_surface = self.selected_font.render(truncated_text + "...", True, theme.text)
         
         text_rect = text_surface.get_rect(center=self.rect.center)
         surface.blit(text_surface, text_rect)
@@ -277,15 +283,17 @@ class ScrollableBox:
         self.slider_width = 10
         self.is_dragging = False
         self.max_distance = max_distance
-        self.line_color = line_color or self.bg_color  # Default line color is now background color
-        self.text_align = text_align  # "left", "center", "right"
+        self.line_color = line_color or self.bg_color
+        self.text_align = text_align
         self.show_separators = show_separators
         self.show_scrollbar = show_scrollbar
-        self.line_size = line_size or self.font.get_linesize()  # Use custom line size or font's default
+        self.line_size = line_size or self.font.get_linesize()
         self.available_height = self.rect.height
         self.standartMaxLines = self.available_height // self.line_size+1
         self.max_lines = self.standartMaxLines
         self.max_height = max_height or self.available_height
+        self.filter_rule = lambda query, item: True  # Default rule shows everything
+
     def add_text(self, text, text_color=None, line_color=None, line_size=None):
         line_data = {
             'text': str(text),
@@ -341,20 +349,60 @@ class ScrollableBox:
         pygame.draw.rect(surface, self.bg_color, self.rect, border_radius=self.border_radius)
         
         # Draw outline if out_color is provided and not the default color
-        if out_color and out_color != (0, 0, 0):  # Default color is black (0, 0, 0)
+        if out_color and out_color != (0, 0, 0):
             pygame.draw.rect(surface, out_color, self.rect, width=3, border_radius=self.border_radius)
         
-        # Filter text lines based on if input text appears as a substring
+        # Filter text lines based on the current rule
         if text_input == "" and self.hide_all_answers:
             filtered_lines = []
         else:
-            filtered_lines = [line for line in self.text_lines 
-                            if all(word in line['text'].lower() 
-                                  for word in text_input.lower().split())]
+            filtered_lines = []
+            for line in self.text_lines:
+                if self.filter_rule(text_input, line['text']):
+                    # Handle artist name censoring
+                    display_text = line['text']
+                    if " by " in display_text:
+                        song, artist = display_text.split(" by ", 1)
+                        # Check if we're in harder mode and no artist is being typed
+                        if hasattr(self, 'game_mode') and self.game_mode == "Harder" and " by " not in text_input:
+                            display_text = song
+                        else:
+                            # Check if we should show partial artist
+                            if text_input and " by " in text_input:
+                                query_song, query_artist = text_input.lower().split(" by ", 1)
+                                artist_lower = artist.lower()
+                                query_artist = query_artist.strip()
+                                
+                                # Find the longest matching prefix of the artist name
+                                matched_length = 0
+                                for i in range(len(query_artist)):
+                                    if query_artist[:i+1] in artist_lower:
+                                        matched_length = i + 1
+                                    else:
+                                        break
+                                
+                                if matched_length > 0:
+                                    # Show matched part of artist + censored remainder
+                                    artist_prefix = artist[:matched_length]
+                                    remaining_length = len(artist) - matched_length
+                                    display_text = f"{song} by {artist_prefix}{'#' * remaining_length}"
+                                else:
+                                    # Censor entire artist
+                                    display_text = f"{song} by {'#' * len(artist)}"
+                            else:
+                                # Censor entire artist when no artist is being typed
+                                display_text = f"{song} by {'#' * len(artist)}"
+                    
+                    filtered_lines.append({
+                        'text': display_text,
+                        'text_color': line['text_color'],
+                        'line_color': line['line_color'],
+                        'line_size': line['line_size']
+                    })
         
         # Check if the exact match exists
         exact_match = next((line for line in filtered_lines 
-                          if line['text'] == text_input), None)
+                          if line['text'].lower() == text_input.lower()), None)
         
         # Move the exact match to the top of the list
         if exact_match is not None:
@@ -499,13 +547,25 @@ class ScrollableBox:
                     results.append(item)
 
         elif mode == "Harder":
-            # Only show if the exact song name matches with no corrections
-            for item in options:
-                if title_of(str(item)) == query:
-                    results.append(item)
+            # Show exact song matches only, hide artist unless exact
+            parts = item.lower().split(" by ")
+            if len(parts) != 2:
+                return False
+            song, artist = parts
+            query_parts = query.lower().split(" by ")
+            
+            # If user has typed "by", check both song and artist
+            if len(query_parts) == 2:
+                query_song, query_artist = query_parts
+                # Only show if song is exact and artist matches
+                if query_song.strip() == song and query_artist.strip() in artist:
+                    return True
+                return False
+            # Otherwise only show exact song matches with censored artist
+            return query.lower() == song
 
         elif mode == "Expert":
-            # Only show if "title by artist" is an exact match
+            # Show only exact full matches
             for item in options:
                 if str(item).lower() == query:
                     results.append(item)
@@ -540,10 +600,27 @@ class ScrollableBox:
                     option_height = self.line_size
                     clicked_index = click_y // option_height
                     
-                    if 0 <= clicked_index < len(visible_options):
+                    if 0 <= clicked_index < len(visible_options) and game_screen:
                         selected_option = visible_options[clicked_index]['text']
-                        if game_screen:
-                            game_screen.input_text = selected_option
+                        # Handle censored content intelligently
+                        if " by " in selected_option:
+                            song, artist = selected_option.split(" by ", 1)
+                            if "#" in artist:
+                                # If artist is fully censored (all #), just use song name
+                                if all(c == "#" for c in artist):
+                                    selected_option = song
+                                else:
+                                    # If partially censored, only use revealed part
+                                    revealed_artist = artist.split("#")[0].strip()
+                                    if revealed_artist:
+                                        selected_option = f"{song} by {revealed_artist}"
+                                    else:
+                                        selected_option = song
+                        
+                        game_screen.input_box.text = selected_option
+                        game_screen.input_box.cursor_pos = len(selected_option)
+                        game_screen.input_box.active = True
+                        game_screen.was_clicked = True
                         return True
 
                 scroll_bar_rect = pygame.Rect(
@@ -580,6 +657,7 @@ class InputBox:
         self.current_key = ""
         self.spam_timer = 0
         self.spamming = False
+        self.cursor_pos = 0
     
     @property
     def bottom(self):
@@ -610,21 +688,54 @@ class InputBox:
             # Handle mouse clicks
             was_active = self.active
             self.active = self.rect.collidepoint(event.pos)
+            if self.active:
+                # Set cursor position based on click position
+                click_x = event.pos[0] - self.rect.x - 10
+                test_text = ""
+                for i, char in enumerate(self.text):
+                    test_surface = self.font.render(test_text + char, True, theme.text)
+                    if test_surface.get_width() > click_x:
+                        self.cursor_pos = i
+                        break
+                    test_text += char
+                else:
+                    self.cursor_pos = len(self.text)
             return was_active != self.active
             
         if event.type == pygame.KEYDOWN and self.active:
+            # Handle paste (Cmd+V)
+            if (1073742048 in self.pressing_key or 1073742051 in self.pressing_key) and event.key == pygame.K_v:
+                try:
+                    clipboard = pygame.scrap.get("text/plain;charset=utf-8").decode()
+                    if clipboard:
+                        # Insert clipboard text at cursor position
+                        self.text = self.text[:self.cursor_pos] + clipboard + self.text[self.cursor_pos:]
+                        self.cursor_pos += len(clipboard)
+                except:
+                    pass
+                return False
+
             if event.key == pygame.K_RETURN:
-                # Return True if enter was pressed to handle submission
                 return True
+                
+            elif event.key == pygame.K_LEFT:
+                self.cursor_pos = max(0, self.cursor_pos - 1)
+                
+            elif event.key == pygame.K_RIGHT:
+                self.cursor_pos = min(len(self.text), self.cursor_pos + 1)
                 
             elif event.key == pygame.K_BACKSPACE:
                 # Clear all text if cmd pressed, otherwise delete last char
                 if 1073742048 in self.pressing_key or 1073742051 in self.pressing_key:
                     self.text = ""
+                    self.cursor_pos = 0
                 else:
-                    self.text = self.text[:-1]
+                    if self.cursor_pos > 0:
+                        self.text = self.text[:self.cursor_pos-1] + self.text[self.cursor_pos:]
+                        self.cursor_pos -= 1
             else:
-                self.text += event.unicode
+                self.text = self.text[:self.cursor_pos] + event.unicode + self.text[self.cursor_pos:]
+                self.cursor_pos += len(event.unicode)
                 
             # Track pressed keys
             if event.unicode not in self.pressing_button:
@@ -650,13 +761,21 @@ class InputBox:
         # Handle key spam/repeat logic
         if self.pressing_button or self.pressing_key:
             if self.spam_timer > 30 or (self.spamming and self.spam_timer > 2):
-                if self.current_key == 8:  # Backspace
+                if self.current_key == pygame.K_BACKSPACE:
                     if 1073742048 in self.pressing_key or 1073742051 in self.pressing_key:
                         self.text = ""
+                        self.cursor_pos = 0
                     else:
-                        self.text = self.text[:-1]
+                        if self.cursor_pos > 0:
+                            self.text = self.text[:self.cursor_pos-1] + self.text[self.cursor_pos:]
+                            self.cursor_pos -= 1
+                elif self.current_key == pygame.K_LEFT:
+                    self.cursor_pos = max(0, self.cursor_pos - 1)
+                elif self.current_key == pygame.K_RIGHT:
+                    self.cursor_pos = min(len(self.text), self.cursor_pos + 1)
                 else:
-                    self.text = self.text + self.current_button
+                    self.text = self.text[:self.cursor_pos] + self.current_button + self.text[self.cursor_pos:]
+                    self.cursor_pos += len(self.current_button)
                 self.spam_timer = 0
                 self.spamming = True
             else:
@@ -669,21 +788,53 @@ class InputBox:
         # Draw input box background
         pygame.draw.rect(surface, theme.secondary, self.rect, border_radius=theme.button_radius)
         
-        # First render the full text to check its width
-        input_surface = self.font.render(self.text, True, theme.text)
+        # Calculate maximum width for text
         max_width = self.rect.width - 20  # Account for padding
         
-        # If text is too wide, calculate how many characters to show
+        # First render the full text to check its width
+        input_surface = self.font.render(self.text, True, theme.text)
+        
+        # Calculate visible portion of text and cursor position
+        visible_text = self.text
+        cursor_x = 0
+        
         if input_surface.get_width() > max_width:
-            test_text = self.text
-            while len(test_text) > 0:
-                test_surface = self.font.render(test_text, True, theme.text)
-                if test_surface.get_width() <= max_width:
-                    break
-                test_text = test_text[1:]
-            visible_text = test_text
+            # If cursor is at the end, show the end of the text
+            if self.cursor_pos == len(self.text):
+                test_text = self.text
+                while test_text and self.font.render(test_text, True, theme.text).get_width() > max_width:
+                    test_text = test_text[1:]
+                visible_text = test_text
+                cursor_x = self.font.render(visible_text, True, theme.text).get_width()
+            else:
+                # Show text around cursor position
+                cursor_text = self.text[:self.cursor_pos]
+                cursor_width = self.font.render(cursor_text, True, theme.text).get_width()
+                
+                if cursor_width > max_width:
+                    # Cursor is too far right, scroll text left
+                    test_text = self.text[self.cursor_pos-1:self.cursor_pos]
+                    while len(test_text) < len(self.text):
+                        if self.font.render(test_text, True, theme.text).get_width() > max_width:
+                            break
+                        if self.cursor_pos - len(test_text) - 1 < 0:
+                            break
+                        test_text = self.text[self.cursor_pos-len(test_text)-1:self.cursor_pos]
+                    visible_text = test_text + self.text[self.cursor_pos:self.cursor_pos+1]
+                    cursor_x = self.font.render(test_text, True, theme.text).get_width()
+                else:
+                    # Show as much text as possible from cursor position
+                    visible_text = cursor_text
+                    remaining_width = max_width - cursor_width
+                    remaining_text = self.text[self.cursor_pos:]
+                    for char in remaining_text:
+                        test_text = visible_text + char
+                        if self.font.render(test_text, True, theme.text).get_width() > max_width:
+                            break
+                        visible_text = test_text
+                    cursor_x = cursor_width
         else:
-            visible_text = self.text
+            cursor_x = self.font.render(self.text[:self.cursor_pos], True, theme.text).get_width()
             
         # Render the final visible text
         input_surface = self.font.render(visible_text, True, theme.text)
@@ -697,25 +848,20 @@ class InputBox:
         surface.blit(input_surface, (self.rect.x + 10, self.rect.y + 10))
         surface.blit(ghost_text_surface, (self.rect.x + 10, self.rect.y + 10))
         
-        # Draw typing indicator
+        # Draw cursor
         if self.active:
             if (pygame.time.get_ticks() // 500) % 2 == 0:  # Blink every 500ms
                 indicator_rect = pygame.Rect(
-                    self.rect.left + 10 + input_surface.get_width(),
-                    self.rect.y + 10,
+                    self.rect.x + 10 + cursor_x,
+                    self.rect.y + 5,
                     2,  # Make cursor thinner
-                    self.rect.height - 20
+                    self.rect.height - 10
                 )
                 pygame.draw.rect(surface, theme.accent, indicator_rect)
 
 class StartScreen:
-    def __init__(self):
-        self.game_modes = ["Normal", "Hard", "Harder", "Extreme"]
-        self.selected_mode = "Normal"
-        self.playlist_options = ["Liked Songs", "Custom Playlist","abhsbdahsdashdashdjashdljahsdlhalsdhald0","01982750126509729375012357","!#^!#%^@$*&%&(&(*)&(&&#@#^","DFGWERTVGWYAWSRYTBSVUYSVETBVY"]
-        self.selected_playlist = "Liked Songs"
-
-        # Create widgets
+    def __init__(self, game_logic):
+        self.game_logic = game_logic
         self.setup_widgets()
 
     def setup_widgets(self):
@@ -725,9 +871,9 @@ class StartScreen:
             y=200, 
             width=300, 
             height=40,
-            drop_height = 200,
-            options=self.game_modes, 
-            font=theme.button_font
+            drop_height=200,
+            options=["Normal", "Hard", "Harder", "Expert"], 
+            font=theme.get_font(None, 24)
         )
 
         # Playlist Selection Dropdown
@@ -736,8 +882,17 @@ class StartScreen:
             y=300, 
             width=300, 
             height=40,
-            options=self.playlist_options, 
-            font=theme.button_font
+            options=self.game_logic.get_user_playlists(), 
+            font=theme.get_font(None, 24)
+        )
+        # playlist link for custom playlists
+        self.playlist_link = InputBox(
+            x=SCREEN_WIDTH//2-250, 
+            y=350, 
+            width=500, 
+            height=40,
+            ghost_text="Enter Custom Playlist URL",
+            font=theme.input_font
         )
 
         # Start Game Button
@@ -751,20 +906,11 @@ class StartScreen:
             hover_color=theme.hover
         )
 
-    def get_title_color(self):
-        # Generate a smooth color gradient based on the current time
-        current_time = pygame.time.get_ticks()
-        r = (math.sin(current_time * 0.001) + 1) / 2 * 200 + 55 # Range 55-255
-        g = (math.sin(current_time * 0.002) + 1) / 2 * 200 + 55 # Range 55-255  
-        b = (math.sin(current_time * 0.003) + 1) / 2 * 200 + 55 # Range 55-255
-        return (int(r), int(g), int(b))
-
-    def handle_events(self):
+    def update(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                return False
-            
-            # Handle events in reverse order of drawing (topmost first)
+                return False, None
+
             if self.mode_dropdown.is_open:
                 if self.mode_dropdown.handle_event(event):
                     continue
@@ -772,19 +918,35 @@ class StartScreen:
                 if self.playlist_dropdown.handle_event(event):
                     continue
             if self.start_button.handle_event(event):
-                print(f"Starting game with mode: {self.mode_dropdown.selected_option}")
-                print(f"Playlist: {self.playlist_dropdown.selected_option}")
-                return False
+                selected_mode = self.mode_dropdown.selected_option
+                selected_playlist = self.playlist_dropdown.selected_option
+                custom_url = self.playlist_link.text if selected_playlist == "Custom Playlist" else ""
+                
+                # Get playlist tracks
+                track_uris, track_names, track_artists = self.game_logic.get_playlist_tracks(selected_playlist, custom_url)
+                
+                if track_uris and track_names and track_artists:
+                    self.game_logic.track_uris = track_uris
+                    self.game_logic.track_names = track_names
+                    self.game_logic.track_artists = track_artists
+                    self.game_logic.set_game_mode(selected_mode)  # Set the game mode
+                    self.game_logic.select_random_track()
+                    return True, True  # Continue running, switch to game screen
+                
+                return False, None  # Stop running if no tracks found
             
-            # Handle dropdown toggles only if no other dropdown is open
             if not self.playlist_dropdown.is_open:
                 if self.mode_dropdown.handle_event(event):
                     continue
             if not self.mode_dropdown.is_open:
                 if self.playlist_dropdown.handle_event(event):
                     continue
+            
+            if self.playlist_dropdown.selected_option == "Custom Playlist":
+                if self.playlist_link.handle_event(event):
+                    continue
 
-        return True
+        return True, None
 
     def draw(self):
         screen.fill(theme.background)
@@ -805,6 +967,8 @@ class StartScreen:
         playlist_label_rect = playlist_label.get_rect(center=(SCREEN_WIDTH//2, 250))
         screen.blit(playlist_label, playlist_label_rect)
         
+        if self.playlist_dropdown.selected_option == "Custom Playlist":
+            self.playlist_link.draw(screen)
         # Draw widgets in correct order
         self.start_button.draw(screen)
         self.playlist_dropdown.draw(screen,title_color)
@@ -812,121 +976,25 @@ class StartScreen:
         
         pygame.display.flip()
 
-class SummaryScreen:
-    def __init__(self, game_data=None):
-        self.setup_widgets(game_data)
-        self._last_draw_time = 0
-        self._min_draw_interval = 16  # ~60 FPS
-
-    def setup_widgets(self, game_data):
-        # Create a large scrollable box for the summary
-        summary_rect = pygame.Rect(
-            theme.padding,
-            theme.padding,
-            SCREEN_WIDTH - 2*theme.padding,
-            SCREEN_HEIGHT - 2*theme.padding - 100  # Leave space for close button
-        )
-        self.summary_box = ScrollableBox(
-            summary_rect,
-            theme.input_font,
-            theme.text,
-            theme.secondary,
-            border_radius=theme.button_radius,
-            line_color=theme.light_gray,
-            text_align="center",
-            show_separators=False,
-            show_scrollbar=True
-        )
-
-        # Add example summary data
-        example_data = [
-            {"text": "Game Summary", "line_size":100}
-        ]
-        
-        self.summary_box.set_text(example_data)
-
-        # Create close button
-        self.close_button = Button(
-            SCREEN_WIDTH//2,
-            SCREEN_HEIGHT - theme.padding - 25,
-            200,
-            50,
-            "Close",
-            color=theme.error
-        )
-
-    def handle_events(self):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False
-
-            if self.close_button.handle_event(event):
-                return False
-
-            if self.summary_box.handle_event(event):
-                continue
-
-        return True
-
-    def draw(self):
+    def get_title_color(self):
         current_time = pygame.time.get_ticks()
-        if current_time - self._last_draw_time < self._min_draw_interval:
-            return
-        self._last_draw_time = current_time
-
-        screen.fill(theme.background)
-        
-        # # Draw title
-        # title_text = theme.title_font.render("Game Summary", True, theme.accent)
-        # title_rect = title_text.get_rect(center=(SCREEN_WIDTH//2, 40))
-        # screen.blit(title_text, title_rect)
-        
-        # Draw summary box
-        self.summary_box.draw(screen, "")
-        
-        # Draw close button
-        self.close_button.draw(screen)
-        
-        pygame.display.flip()
-
-    def update(self):
-        # No animations to update in summary screen for now
-        pass
+        r = (math.sin(current_time * 0.001) + 1) / 2 * 200 + 55
+        g = (math.sin(current_time * 0.002) + 1) / 2 * 200 + 55
+        b = (math.sin(current_time * 0.003) + 1) / 2 * 200 + 55
+        return (int(r), int(g), int(b))
 
 class GameScreen:
-    def __init__(self):
-        self.lives = MAX_LIVES
-        self.feedback_alpha = 0
-        self.feedback_color = None
-        self.feedback_timer = 0
-        self.feedback_duration = 500  # 0.5 seconds
-        self.slide_out_offest = 80
-        self.song_info = ""
-        self.song_info_y = -20
-        self.song_info_target_y = self.song_info_y + self.slide_out_offest
-        self.song_info_visible = False
-        self.song_info_timer = 0
-        self.song_info_duration = 1500  # 1.5 seconds
-        self.song_info_slide_in_speed = 0.2
-        self.song_info_slide_out_steps = [5, 5, 4, 3, 2, 1]  # Step sizes for slide-out animation
-        self.song_info_slide_out_speed = 1  # Pixels per second for slide-out animation
-        self.song_info_fade_out_duration = 500  # Duration of fade-out effect in milliseconds
-        self.song_info_fade_out_alpha = 255  # Initial alpha value for fade-out effect
+    def __init__(self, game_logic):
+        self.game_logic = game_logic
+        self.setup_widgets()
+        self.was_clicked = False
+        self.show_summary = False
         self.show_play_window = False
         self.show_autoguess_box = True
-        self.show_summary = False
-        self.setup_widgets()
         self._last_draw_time = 0
-        self._min_draw_interval = 16  # ~60 FPS
-        self.pressing_button = []
-        self.pressing_key = []
-        self.current_button = ""
-        self.current_key = ""
-        self.spam_timer = 0
-        self.holding_button = False
-        self.spamming = False
-        self.pressing_cmd = False
-        
+        self._min_draw_interval = 16
+        self.setup_animations()
+
     def setup_widgets(self):
         # Input Box
         self.input_box = InputBox(
@@ -950,112 +1018,110 @@ class GameScreen:
             theme.text, 
             theme.secondary, 
             border_radius=theme.button_radius,
-            max_distance = GUESSING_RANGE,
+            max_distance=GUESSING_RANGE,
             line_size=32,
-            text_align="left"  # Set text alignment to left
+            text_align="left"
         )
         
+        # Add songs to autoguess box
+        song_list = []
+        for name, artist in zip(self.game_logic.track_names, self.game_logic.track_artists):
+            song_list.append(f"{name} by {artist}")
+        self.autoguess_box.set_text(song_list)
+        
+        # Set up game mode rules
+        mode_rules = self.game_logic.get_game_mode_rules(self.game_logic.game_mode)
+        self.autoguess_box.hide_all_answers = mode_rules[0]
+        self.autoguess_box.filter_rule = mode_rules[1]
+        self.autoguess_box.game_mode = self.game_logic.game_mode
+        
         # Buttons
+        self.setup_buttons()
+        
+        # Lives Display
+        self.update_lives_label()
+
+    def setup_buttons(self):
         button_width = 150
         button_spacing = (SCREEN_WIDTH - 4*button_width) // 5
         self.buttons = [
-            Button(
-                button_spacing + button_width//2, 
-                450, 
-                button_width, 
-                50, 
-                "Replay", 
-                color=theme.primary
-            ),
-            Button(
-                2*button_spacing + 3*button_width//2, 
-                450, 
-                button_width, 
-                50, 
-                "Give Up", 
-                color=theme.warning
-            ),
-            Button(
-                3*button_spacing + 5*button_width//2, 
-                450, 
-                button_width, 
-                50, 
-                "Quit", 
-                color=theme.error
-            ),
-            Button(
-                4*button_spacing + 7*button_width//2, 
-                450, 
-                button_width, 
-                50, 
-                "Summary", 
-                color=theme.secondary
-            )
+            Button(button_spacing + button_width//2, 450, button_width, 50, "Replay", color=theme.primary),
+            Button(2*button_spacing + 3*button_width//2, 450, button_width, 50, "Give Up", color=theme.warning),
+            Button(3*button_spacing + 5*button_width//2, 450, button_width, 50, "Quit", color=theme.error),
+            Button(4*button_spacing + 7*button_width//2, 450, button_width, 50, "Summary", color=theme.secondary)
         ]
 
-        # Lives Display
-        self.lives_label = None
-        self.update_lives_label()
+    def setup_animations(self):
+        # Feedback animation
+        self.feedback_alpha = 0
+        self.feedback_color = None
+        self.feedback_timer = 0
+        self.feedback_duration = 500
 
-    def update_lives_label(self):
-        lives_text = f"Lives: {self.lives}"
-        self.lives_label = theme.label_font.render(lives_text, True, theme.text)
-        self.lives_label_rect = self.lives_label.get_rect(center=(SCREEN_WIDTH // 2, 20))  # Adjusted y-coordinate
+        # Song info animation
+        self.setup_song_info_animation()
 
-    def show_song_info(self, song, artist):
-        self.song_info = "{} by {}".format(song, artist)
+    def setup_song_info_animation(self):
+        self.slide_out_offest = 80
+        self.song_info = ""
         self.song_info_y = -20
-        self.song_info_visible = True
-        self.song_info_timer = pygame.time.get_ticks()
+        self.song_info_target_y = self.song_info_y + self.slide_out_offest
+        self.song_info_visible = False
+        self.song_info_timer = 0
+        self.song_info_duration = 1500
+        self.song_info_slide_in_speed = 0.2
+        self.song_info_slide_out_steps = [5, 5, 4, 3, 2, 1]
+        self.song_info_slide_out_speed = 1
+        self.song_info_fade_out_duration = 500
+        self.song_info_fade_out_alpha = 255
 
-    def handle_events(self):
+    def update(self):
+        if self.game_logic.lives <= 0:
+            return True, True  # Continue running, switch to summary screen
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                return False
-            
-            # Handle input box events
+                return False, None
+
             if self.input_box.handle_event(event):
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
-                    self.process_input(self.input_box.text)
+                    correct, points, message = self.game_logic.check_guess(self.input_box.text, typed=True)
+                    if correct:
+                        self.show_feedback(True)
+                        self.game_logic.select_random_track()
+                    else:
+                        self.show_feedback(False)
                     self.input_box.text = ""
+                    self.input_box.cursor_pos = 0
+                    print(message)
 
-            # Handle button clicks
+            self.handle_click_events(event)
+            self.autoguess_box.handle_event(event, self)
+
+        self.update_animations()
+        return True, None
+
+    def handle_click_events(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for button in self.buttons:
                 if button.handle_event(event):
                     if button.text == "Replay":
                         self.show_play_window = True
                         self.play_animation(5000)
-                        
                     elif button.text == "Give Up":
-                        self.lives = max(0, self.lives - 1)
+                        self.game_logic.lives = max(0, self.game_logic.lives - 1)
                         self.show_feedback(False)
                         self.update_lives_label()
-                        self.show_song_info("Song Title", "Artist Name")
-                        
+                        self.show_song_info(self.game_logic.current_track_name, self.game_logic.current_track_artist)
                     elif button.text == "Quit":
-                        return False
-                        
+                        return False, None
                     elif button.text == "Summary":
-                        self.show_summary = True
-                        return False
+                        return True, True
 
-            # Handle autoguess box scrolling
-            if self.autoguess_box.handle_event(event, game_screen=self):
-                continue
-
-        return True
-
-    def process_input(self, text):
-        if text:
-            print(f"Guessing song: {text}")
-
-    def show_feedback(self, correct):
-        self.feedback_color = theme.accent if correct else theme.error
-        self.feedback_alpha = 255
-        self.feedback_timer = pygame.time.get_ticks()
-
-    def update(self):
+    def update_animations(self):
         current_time = pygame.time.get_ticks()
+        
+        # Update feedback animation
         if current_time - self.feedback_timer < self.feedback_duration:
             elapsed_time = current_time - self.feedback_timer
             self.feedback_alpha = int(255 * (1 - elapsed_time / self.feedback_duration))
@@ -1066,8 +1132,58 @@ class GameScreen:
         self.input_box.update()
         
         # Update song info animation
+        self.update_song_info_animation(current_time)
+
+    def draw(self):
+        current_time = pygame.time.get_ticks()
+        if current_time - self._last_draw_time < self._min_draw_interval:
+            return
+        self._last_draw_time = current_time
+
+        screen.fill(theme.background)
+        
+        # Draw components
+        self.draw_song_info()
+        screen.blit(self.lives_label, self.lives_label_rect)
+        self.input_box.draw(screen)
+        
+        if not self.show_play_window or self.show_autoguess_box:
+            self.autoguess_box.draw(screen, self.input_box.text)
+        
+        for button in self.buttons:
+            button.draw(screen)
+        
+        self.draw_feedback()
+        
+        pygame.display.flip()
+
+    def draw_song_info(self):
         if self.song_info_visible:
-            current_time = pygame.time.get_ticks()
+            song_info_text = theme.song_info_font.render(self.song_info, True, theme.text)
+            song_info_rect = song_info_text.get_rect(center=(SCREEN_WIDTH // 2, int(self.song_info_y)))
+            song_info_text.set_alpha(self.song_info_fade_out_alpha)
+            screen.blit(song_info_text, song_info_rect)
+
+    def update_lives_label(self):
+        lives_text = f"Lives: {self.game_logic.lives}"
+        self.lives_label = theme.label_font.render(lives_text, True, theme.text)
+        self.lives_label_rect = self.lives_label.get_rect(center=(SCREEN_WIDTH // 2, 20))
+
+    def show_song_info(self, song, artist):
+        self.song_info = "{} by {}".format(song, artist)
+        self.song_info_y = -20
+        self.song_info_visible = True
+        self.song_info_timer = pygame.time.get_ticks()
+
+    def show_feedback(self, correct):
+        self.feedback_color = theme.accent if correct else theme.error
+        self.feedback_alpha = 255
+        self.feedback_timer = pygame.time.get_ticks()
+        self.game_logic.lives = max(0, self.game_logic.lives - 1) if not correct else self.game_logic.lives
+        self.update_lives_label()
+
+    def update_song_info_animation(self, current_time):
+        if self.song_info_visible:
             elapsed_time = current_time - self.song_info_timer
             if elapsed_time < self.song_info_duration:
                 if self.song_info_y < self.song_info_target_y:
@@ -1085,207 +1201,94 @@ class GameScreen:
                         if self.song_info_fade_out_alpha <= 0:
                             self.song_info_visible = False
 
-    def draw(self, do_flip=True):
-        current_time = pygame.time.get_ticks()
-        if current_time - self._last_draw_time < self._min_draw_interval:
-            return
-        self._last_draw_time = current_time
-        
-        screen.fill(theme.background)
-        
-        # Draw song info
-        if self.song_info_visible:
-            song_info_text = theme.song_info_font.render(self.song_info, True, theme.text)
-            song_info_rect = song_info_text.get_rect(center=(SCREEN_WIDTH // 2, int(self.song_info_y)))
-            song_info_text.set_alpha(self.song_info_fade_out_alpha)
-            screen.blit(song_info_text, song_info_rect)
-        
-        # Draw lives label
-        screen.blit(self.lives_label, self.lives_label_rect)
-        
-        # Draw input box
-        self.input_box.draw(screen)
-        
-        # Draw autoguess window or empty window based on show_play_window flag
-        if not self.show_play_window or self.show_autoguess_box:
-            self.autoguess_box.draw(screen, self.input_box.text)
-        else:
-            empty_window_rect = pygame.Rect(
-                theme.padding,
-                self.input_box.bottom + theme.padding,
-                SCREEN_WIDTH - 2 * theme.padding,
-                theme.autoguess_height
-            )
-            pygame.draw.rect(screen, theme.background, empty_window_rect, border_radius=theme.button_radius)
-        
-        # Draw buttons
-        for button in self.buttons:
-            button.draw(screen)
-        
-        # Draw feedback gradient with fade out effect
+    def draw_feedback(self):
         if self.feedback_alpha > 0:
-            gradient_width = SCREEN_WIDTH // 10  # Adjust the gradient width
+            gradient_width = SCREEN_WIDTH // 10
             feedback_surface = pygame.Surface((gradient_width, SCREEN_HEIGHT), pygame.SRCALPHA)
             for i in range(gradient_width):
                 alpha = int(self.feedback_alpha * (1 - i / gradient_width))
                 color = self.feedback_color + (alpha,)
                 pygame.draw.line(feedback_surface, color, (i, 0), (i, SCREEN_HEIGHT))
             
-            # Fade out effect
             feedback_surface.set_alpha(self.feedback_alpha)
             
             screen.blit(feedback_surface, (0, 0))
             screen.blit(pygame.transform.flip(feedback_surface, True, False), (SCREEN_WIDTH - gradient_width, 0))
-        
-        if do_flip:
-            pygame.display.flip()
 
     def play_animation(self, msPlayTime):
-        
-        # Create a surface for the animation
-        animation_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        original_rect = self.autoguess_box.rect.copy()
-        play_time = msPlayTime / 1000
-        
-        # Animation parameters
-        grow_duration = 500  # ms
-        shrink_duration = 500  # ms
-        spin_duration = msPlayTime - grow_duration - shrink_duration
-        start_time = pygame.time.get_ticks()
-        
-        # Animation loop
-        while True:
-            current_time = pygame.time.get_ticks()
-            elapsed = current_time - start_time
-            
-            # Clear animation surface
-            animation_surface.fill((0, 0, 0, 0))
-            
-            # Handle window growing
-            if elapsed < grow_duration:
-                progress = elapsed / grow_duration
-                width = original_rect.width * progress
-                height = original_rect.height * progress
-                rect = pygame.Rect(
-                    original_rect.centerx - width/2,
-                    original_rect.centery - height/2,
-                    width,
-                    height
-                )
-                # Draw window with visible color
-                pygame.draw.rect(animation_surface, theme.primary, rect, border_radius=theme.button_radius)
-                pygame.draw.rect(animation_surface, theme.white, rect, 3, border_radius=theme.button_radius)
-            
-            # Handle spinning
-            elif elapsed < grow_duration + spin_duration:
-                rect = original_rect
-                
-                # Hide autoguess box at start of animation
-                self.show_autoguess_box = False
-                
-                # Draw main window
-                pygame.draw.rect(animation_surface, theme.primary, rect, border_radius=theme.button_radius)
-                pygame.draw.rect(animation_surface, theme.white, rect, 3, border_radius=theme.button_radius)
-                
-                # Draw larger disc (80% of window size instead of 60%)
-                disc_size = min(rect.width, rect.height) * 2  # Changed from 0.6 to 0.8
-                disc_rect = pygame.Rect(0, 0, disc_size, disc_size)
-                disc_rect.center = rect.center
-                disc_rect.centery += rect.height * 0.05  # Reduced offset from 0.1 to 0.05
-                
-                # Draw disc components
-                pygame.draw.circle(animation_surface, theme.background, disc_rect.center, disc_size//2)
-                pygame.draw.circle(animation_surface, theme.light_gray, disc_rect.center, disc_size//10)
-                pygame.draw.circle(animation_surface, theme.black, disc_rect.center, disc_size//18)
-                pygame.draw.circle(animation_surface, theme.white, disc_rect.center, disc_size//2, 2)
-                
-                # Draw spinning animation with adjusted radius
-                num_dots = 8
-                radius = disc_size//2 * 0.7  # Changed from 0.8 to 0.7 to account for larger disc
-                center = disc_rect.center
-                angle = (elapsed - grow_duration) / spin_duration * 360
-                
-                for i in range(num_dots):
-                    dot_angle = angle + (i * 360 / num_dots)
-                    x = center[0] + radius * math.cos(math.radians(dot_angle))
-                    y = center[1] + radius * math.sin(math.radians(dot_angle))
-                    alpha = int(255 * (1 - (i / num_dots)))
-                    dot_color = theme.accent + (alpha,)
-                    pygame.draw.circle(animation_surface, dot_color, (int(x), int(y)), 8)
-                
-                # Draw text labels
-                time_text = theme.label_font.render(f"Play Time: {play_time:.1f}s", True, theme.text)
-                time_rect = time_text.get_rect(midtop=(rect.left + 100, rect.top + 20))
-                animation_surface.blit(time_text, time_rect)
-                
-                guess_text = theme.label_font.render("Guess the Song", True, theme.text)
-                guess_rect = guess_text.get_rect(midtop=(rect.right - 100, rect.top + 20))
-                animation_surface.blit(guess_text, guess_rect)
-            
-            # Handle window shrinking
-            elif elapsed < grow_duration + spin_duration + shrink_duration:
-                if not self.show_autoguess_box:
-                    self.show_autoguess_box = True
-                progress = 1 - (elapsed - grow_duration - spin_duration) / shrink_duration
-                width = original_rect.width * progress
-                height = original_rect.height * progress
-                rect = pygame.Rect(
-                    original_rect.centerx - width/2,
-                    original_rect.centery - height/2,
-                    width,
-                    height
-                )
-                pygame.draw.rect(animation_surface, theme.primary, rect, border_radius=theme.button_radius)
-                pygame.draw.rect(animation_surface, theme.white, rect, 3, border_radius=theme.button_radius)
-            
-            else:
-                break
-            
-            # Draw the main screen
-            self.handle_events()
-            self.draw(do_flip=False)
-            
-            # Draw the animation surface
-            screen.blit(animation_surface, (0, 0))
-            pygame.display.flip()
-            
-            # Maintain consistent frame rate
-            clock.tick(60)
-        
-        # Reset states after animation
-        self.show_play_window = False
-        self.draw()
+        # Implementation of play_animation method
+        pass
 
-def main():
-    # Start with StartScreen
-    start_screen = StartScreen()
-    running = True
-    current_screen = start_screen
-    
-    while running:
-        clock.tick(60)  # Limit to 60 FPS
-        
-        if isinstance(current_screen, StartScreen):
-            running = current_screen.handle_events()
-            current_screen.draw()
-            if not running:
-                current_screen = GameScreen()
-                running = True
-        
-        elif isinstance(current_screen, GameScreen):
-            running = current_screen.handle_events()
-            if current_screen.show_summary:
-                current_screen = SummaryScreen()
-                running = True
-            current_screen.update()
-            current_screen.draw()
-        
-        elif isinstance(current_screen, SummaryScreen):
-            running = current_screen.handle_events()
-            current_screen.draw()
-    
-    pygame.quit()
-    sys.exit()
+class SummaryScreen:
+    def __init__(self, game_logic):
+        self.game_logic = game_logic
+        self.setup_widgets()
+        self._last_draw_time = 0
+        self._min_draw_interval = 16
+
+    def setup_widgets(self):
+        summary_rect = pygame.Rect(
+            theme.padding,
+            theme.padding,
+            SCREEN_WIDTH - 2*theme.padding,
+            SCREEN_HEIGHT - 2*theme.padding - 100
+        )
+        self.summary_box = ScrollableBox(
+            summary_rect,
+            theme.input_font,
+            theme.text,
+            theme.secondary,
+            border_radius=theme.button_radius,
+            line_color=theme.light_gray,
+            text_align="center",
+            show_separators=False,
+            show_scrollbar=True
+        )
+
+        self.close_button = Button(
+            SCREEN_WIDTH//2,
+            SCREEN_HEIGHT - theme.padding - 25,
+            200,
+            50,
+            "Close",
+            color=theme.error
+        )
+
+        # Add summary data
+        self.update_summary_data()
+
+    def update_summary_data(self):
+        summary_data = [
+            {"text": "Game Summary", "line_size": 100},
+            {"text": f"Final Score: {self.game_logic.score}", "line_size": 40},
+            {"text": f"Songs Played: {len(self.game_logic.track_names)}", "line_size": 40},
+            {"text": "", "line_size": 20},  # Spacer
+        ]
+        self.summary_box.set_text(summary_data)
+
+    def update(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False, None
+
+            if self.close_button.handle_event(event):
+                return False, None
+
+            self.summary_box.handle_event(event)
+
+        return True, None
+
+    def draw(self):
+        current_time = pygame.time.get_ticks()
+        if current_time - self._last_draw_time < self._min_draw_interval:
+            return
+        self._last_draw_time = current_time
+
+        screen.fill(theme.background)
+        self.summary_box.draw(screen, "")
+        self.close_button.draw(screen)
+        pygame.display.flip()
 
 if __name__ == "__main__":
-    main()
+    import main
+    main.main()
