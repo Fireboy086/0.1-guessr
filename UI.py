@@ -7,6 +7,7 @@ import pygame.gfxdraw  # For smoother drawing
 import random
 import re
 from load import *
+import webbrowser
 
 # Initialize Pygame with optimized settings
 pygame.init()
@@ -396,9 +397,6 @@ class ScrollableBox:
                                 else:
                                     # If song name doesn't match, just show the song name
                                     display_text = song
-                            else:
-                                # If no artist is being typed, just show the song name
-                                display_text = song
                     
                     filtered_lines.append({
                         'text': display_text,
@@ -1481,6 +1479,151 @@ class SummaryScreen:
         screen.fill(theme.background)
         self.summary_box.draw(screen, "")
         self.close_button.draw(screen)
+        pygame.display.flip()
+
+class CheersToSetupifyFileForLastingMeThatLongIWantItToBerememberedAsIsButNotForgottenInOurHeartsYouServedMeWellSetupify:
+    def __init__(self):
+        self.setup_widgets()
+        self._last_draw_time = 0
+        self._min_draw_interval = 16
+        self.error_message = ""
+        self.error_timer = 0
+        self.error_duration = 3000  # Show error for 3 seconds
+
+    def setup_widgets(self):
+        # Info ScrollBox
+        info_text = [
+            {"text": "Spotify API Setup", "line_size": 48},
+            {"text": "", "line_size": 20},
+            {"text": "To use this application, you need Spotify API credentials.", "line_size": 24},
+            {"text": "Follow these steps:", "line_size": 24},
+            {"text": "", "line_size": 20},
+            {"text": "1. Click 'Open Dashboard' to visit Spotify Developer Dashboard", "line_size": 24},
+            {"text": "2. Log in with your Spotify account", "line_size": 24},
+            {"text": "3. Create a new app", "line_size": 24},
+            {"text": "4. Copy the Client ID and Client Secret", "line_size": 24},
+            {"text": "5. Paste them in the fields below", "line_size": 24},
+            {"text": "", "line_size": 20},
+            {"text": "Note: Your credentials are stored locally and", "line_size": 24},
+            {"text": "are only used to access Spotify's API.", "line_size": 24},
+        ]
+        
+        info_rect = pygame.Rect(
+            theme.padding,
+            theme.padding,
+            SCREEN_WIDTH - 2*theme.padding,
+            250
+        )
+        self.info_box = ScrollableBox(
+            info_rect,
+            theme.input_font,
+            theme.text,
+            theme.secondary,
+            border_radius=theme.button_radius,
+            text_align="center",
+            show_separators=False
+        )
+        self.info_box.set_text(info_text)
+
+        # Input Boxes
+        input_width = 400
+        self.client_id_input = InputBox(
+            SCREEN_WIDTH//2 - input_width//2,
+            300,
+            input_width,
+            theme.input_height,
+            ghost_text="Client ID"
+        )
+        
+        self.client_secret_input = InputBox(
+            SCREEN_WIDTH//2 - input_width//2,
+            380,
+            input_width,
+            theme.input_height,
+            ghost_text="Client Secret"
+        )
+
+        # Buttons
+        button_width = 200
+        self.confirm_button = Button(
+            SCREEN_WIDTH//2,
+            480,
+            button_width,
+            50,
+            "Confirm",
+            color=theme.primary
+        )
+        
+        self.dashboard_button = Button(
+            SCREEN_WIDTH//2,
+            550,
+            button_width,
+            50,
+            "Open Dashboard",
+            color=theme.secondary
+        )
+
+    def show_error(self, message):
+        self.error_message = message
+        self.error_timer = pygame.time.get_ticks()
+        # Clear input fields
+        self.client_id_input.text = ""
+        self.client_secret_input.text = ""
+        self.client_id_input.cursor_pos = 0
+        self.client_secret_input.cursor_pos = 0
+
+    def update(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False, None, None
+
+            # Handle input boxes
+            self.client_id_input.handle_event(event)
+            self.client_secret_input.handle_event(event)
+
+            # Handle buttons
+            if self.dashboard_button.handle_event(event):
+                webbrowser.open('https://developer.spotify.com/dashboard')
+                continue
+
+            if self.confirm_button.handle_event(event):
+                if self.client_id_input.text and self.client_secret_input.text:
+                    return True, self.client_id_input.text, self.client_secret_input.text
+
+            self.info_box.handle_event(event)
+
+        # Clear error message after duration
+        if self.error_message and pygame.time.get_ticks() - self.error_timer > self.error_duration:
+            self.error_message = ""
+
+        return True, None, None
+
+    def draw(self):
+        current_time = pygame.time.get_ticks()
+        if current_time - self._last_draw_time < self._min_draw_interval:
+            return
+        self._last_draw_time = current_time
+
+        screen.fill(theme.background)
+        self.info_box.draw(screen, "")
+        self.client_id_input.draw(screen)
+        self.client_secret_input.draw(screen)
+        
+        # Only show confirm button as active if both fields have text
+        if self.client_id_input.text and self.client_secret_input.text:
+            self.confirm_button.color = theme.primary
+        else:
+            self.confirm_button.color = theme.gray
+            
+        self.confirm_button.draw(screen)
+        self.dashboard_button.draw(screen)
+
+        # Draw error message if exists
+        if self.error_message:
+            error_surface = theme.label_font.render(self.error_message, True, theme.error)
+            error_rect = error_surface.get_rect(center=(SCREEN_WIDTH//2, 440))
+            screen.blit(error_surface, error_rect)
+
         pygame.display.flip()
 
 if __name__ == "__main__":
