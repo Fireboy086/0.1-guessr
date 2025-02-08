@@ -6,7 +6,6 @@ from config import *
 import pygame.gfxdraw  # For smoother drawing
 import random
 import re
-from load import *
 import webbrowser
 
 # Initialize Pygame with optimized settings
