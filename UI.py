@@ -4,8 +4,6 @@ import sys
 import math
 from config import *
 import pygame.gfxdraw  # For smoother drawing
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 import random
 import re
 from load import *
@@ -169,8 +167,7 @@ class Button:
     def handle_event(self, event):
         if event.type == pygame.MOUSEMOTION:
             self.is_hovered = self.rect.collidepoint(event.pos)
-        
-        if event.type == pygame.MOUSEBUTTONDOWN:
+        elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1 and self.rect.collidepoint(event.pos):
                 return True
         return False
@@ -368,30 +365,40 @@ class ScrollableBox:
                             display_text = song
                         else:
                             # Check if we should show partial artist
-                            if text_input and " by " in text_input:
+                            if " by " in text_input:
                                 query_song, query_artist = text_input.lower().split(" by ", 1)
                                 artist_lower = artist.lower()
                                 query_artist = query_artist.strip()
                                 
-                                # Find the longest matching prefix of the artist name
-                                matched_length = 0
-                                for i in range(len(query_artist)):
-                                    if query_artist[:i+1] in artist_lower:
-                                        matched_length = i + 1
+                                # Check if the song name matches first
+                                if query_song.strip() == song.lower():
+                                    # Find the longest matching prefix of the artist name
+                                    matched_length = 0
+                                    has_mismatch = False
+                                    for i in range(len(query_artist)):
+                                        if i < len(artist_lower) and query_artist[i] == artist_lower[i]:
+                                            matched_length = i + 1
+                                        else:
+                                            has_mismatch = True
+                                            break
+                                    
+                                    if has_mismatch:
+                                        # If there's a mismatch, reset to just showing the song name
+                                        display_text = song
+                                    elif matched_length > 0:
+                                        # Show matched part of artist + censored remainder
+                                        artist_prefix = artist[:matched_length]
+                                        remaining_length = len(artist) - matched_length
+                                        display_text = f"{song} by {artist_prefix}{'#' * remaining_length}"
                                     else:
-                                        break
-                                
-                                if matched_length > 0:
-                                    # Show matched part of artist + censored remainder
-                                    artist_prefix = artist[:matched_length]
-                                    remaining_length = len(artist) - matched_length
-                                    display_text = f"{song} by {artist_prefix}{'#' * remaining_length}"
+                                        # Censor entire artist
+                                        display_text = f"{song} by {'#' * len(artist)}"
                                 else:
-                                    # Censor entire artist
-                                    display_text = f"{song} by {'#' * len(artist)}"
+                                    # If song name doesn't match, just show the song name
+                                    display_text = song
                             else:
-                                # Censor entire artist when no artist is being typed
-                                display_text = f"{song} by {'#' * len(artist)}"
+                                # If no artist is being typed, just show the song name
+                                display_text = song
                     
                     filtered_lines.append({
                         'text': display_text,
@@ -994,9 +1001,10 @@ class GameScreen:
         self._last_draw_time = 0
         self._min_draw_interval = 16
         self.setup_animations()
-        self.show_summary = False
         self.stop_game = False
         self.ready_to_quit = False
+        self.transitioning = False
+
     def setup_widgets(self):
         # Input Box
         self.input_box = InputBox(
@@ -1076,40 +1084,43 @@ class GameScreen:
         self.song_info_slide_out_speed = 1
         self.song_info_fade_out_duration = 500
         self.song_info_fade_out_alpha = 255
-
+        
     def update(self):
         if self.ready_to_quit:
-            if self.game_logic.lives <= 0:
+            if self.game_logic.lives <= 0 or self.show_summary:
                 return True, True  # Continue running, switch to summary screen
-        
+            elif self.stop_game:
+                return False, None  # Just quit without summary
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False, None
 
-            if self.input_box.handle_event(event):
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN and self.input_box.text != "":
-                    correct, points, message = self.game_logic.check_guess(self.input_box.text)
-                    if correct:
-                        self.show_feedback(True)
-                        self.game_logic.select_random_track()
-                    else:
-                        self.show_feedback(False)
-                    self.input_box.text = ""
-                    self.input_box.cursor_pos = 0
-                    self.game_logic.typed = True
-                    print(message)
+            # Handle input box events first
+            if not self.transitioning:
+                if self.input_box.handle_event(event):
+                    if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN and self.input_box.text != "":
+                        correct, points, message = self.game_logic.check_guess(self.input_box.text)
+                        if correct:
+                            self.show_feedback(True)
+                            self.game_logic.select_random_track()
+                        else:
+                            self.show_feedback(False)
+                            if self.game_logic.lives <= 0:
+                                self.transitioning = True
+                                self.show_song_info(self.game_logic.current_track_name, self.game_logic.current_track_artist)
+                        self.input_box.text = ""
+                        self.input_box.cursor_pos = 0
+                        self.game_logic.typed = True
+                        print(message)
+                    continue  # Skip other event handling if input box handled the event
 
-            self.handle_events(event)
-            for button in self.buttons:
-                if button.handle_event(event):
-                    continue
-            self.autoguess_box.handle_event(event, self, self.game_logic)
-            
-            if self.ready_to_quit:
-                if self.stop_game and self.show_summary:
-                    return False, True
-                elif self.stop_game and not self.show_summary:
-                    return False, None
+                # Handle other events
+                self.handle_events(event)
+                self.autoguess_box.handle_event(event, self, self.game_logic)
+                for button in self.buttons:
+                    if button.handle_event(event):
+                        break
 
         self.update_animations()
         return True, None
@@ -1127,13 +1138,26 @@ class GameScreen:
                         self.game_logic.select_random_track()
                         self.show_feedback(False)
                         self.update_lives_label()
+                        if self.game_logic.lives <= 0:
+                            self.transitioning = True
                         self.show_song_info(self.game_logic.current_track_name, self.game_logic.current_track_artist)
                     elif button.text == "Quit":
                         self.stop_game = True
                         self.show_summary = False
+                        self.transitioning = True
+                        self.ready_to_quit = True
                     elif button.text == "Summary":
                         self.stop_game = True
                         self.show_summary = True
+                        self.transitioning = True
+                        self.show_song_info(self.game_logic.current_track_name, self.game_logic.current_track_artist)
+                    return  # Exit after handling button click
+            
+            # Handle input box focus
+            if self.input_box.rect.collidepoint(event.pos):
+                self.input_box.active = True
+            else:
+                self.input_box.active = False
 
     def update_animations(self):
         current_time = pygame.time.get_ticks()
@@ -1240,16 +1264,27 @@ class GameScreen:
     def draw_feedback(self):
         if self.feedback_alpha > 0:
             gradient_width = SCREEN_WIDTH // 10
+            # Create main gradient surface
             feedback_surface = pygame.Surface((gradient_width, SCREEN_HEIGHT), pygame.SRCALPHA)
             for i in range(gradient_width):
                 alpha = int(self.feedback_alpha * (1 - i / gradient_width))
                 color = self.feedback_color + (alpha,)
                 pygame.draw.line(feedback_surface, color, (i, 0), (i, SCREEN_HEIGHT))
             
-            feedback_surface.set_alpha(self.feedback_alpha)
+            # Create border surface with higher opacity
+            border_surface = pygame.Surface((gradient_width, SCREEN_HEIGHT), pygame.SRCALPHA)
+            border_alpha = min(255, self.feedback_alpha * 2)  # Double the opacity for borders
+            border_color = self.feedback_color + (border_alpha,)
+            # Draw multiple lines for thicker border
+            for i in range(3):  # 3 pixels thick
+                pygame.draw.line(border_surface, border_color, (i, 0), (i, SCREEN_HEIGHT))
             
+            # Draw the gradient and borders
             screen.blit(feedback_surface, (0, 0))
             screen.blit(pygame.transform.flip(feedback_surface, True, False), (SCREEN_WIDTH - gradient_width, 0))
+            # Draw borders with higher opacity
+            screen.blit(border_surface, (0, 0))
+            screen.blit(pygame.transform.flip(border_surface, True, False), (SCREEN_WIDTH - gradient_width, 0))
 
     def play_animation(self, msPlayTime):
         

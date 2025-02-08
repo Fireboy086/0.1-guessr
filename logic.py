@@ -1,6 +1,7 @@
 import random
 import re
 from config import *
+from player import SpotifyPlayer
 
 def levenshtein_distance(s1, s2):
     if len(s1) < len(s2):
@@ -24,6 +25,7 @@ def levenshtein_distance(s1, s2):
 class GameLogic:
     def __init__(self, sp):
         self.sp = sp
+        self.player = SpotifyPlayer(sp)
         self.track_uris = []
         self.track_names = []
         self.track_artists = []
@@ -145,11 +147,26 @@ class GameLogic:
         return track_uris, track_names, track_artists
 
     def select_random_track(self):
-        self.current_track_index = random.randint(0, len(self.track_names) - 1)
-        self.current_track_name = self.track_names[self.current_track_index]
-        self.current_track_artist = self.track_artists[self.current_track_index]
-        print(self.current_track_name, self.current_track_artist)
-        return self.current_track_name, self.current_track_artist
+        if not self.track_uris:
+            return None, None
+
+        # Use the player to select and play a random track
+        track_uri, track_name, track_artist = self.player.play_random_track(
+            self.track_uris, 
+            self.track_names, 
+            self.track_artists
+        )
+
+        if track_uri:
+            self.current_track_name = track_name
+            self.current_track_artist = track_artist
+            print(self.current_track_name, self.current_track_artist)
+            return self.current_track_name, self.current_track_artist
+        return None, None
+
+    def replay_current_track(self):
+        """Replay the current track with extended duration."""
+        return self.player.replay_song()
 
     def check_guess(self, guess):
         if not guess:
@@ -159,10 +176,12 @@ class GameLogic:
         guess_lower = guess.lower()
         
         if guess_lower == self.current_track_name.lower():
+            self.score += 5 * bonus_multiplier
             points = 5 * bonus_multiplier
             message = f"Correct! {points} points!" + (" (Typed bonus!)" if bonus_multiplier > 1 else "")
             return True, points, message
         elif guess_lower == f"{self.current_track_name} by {self.current_track_artist}".lower():
+            self.score += 10 * bonus_multiplier
             points = 10 * bonus_multiplier
             message = f"Correct! {points} points!" + (" (Typed bonus!)" if bonus_multiplier > 1 else "")
             return True, points, message
@@ -221,6 +240,7 @@ class GameLogic:
 
     def set_game_mode(self, mode):
         self.game_mode = mode 
+        
         
         
 if __name__ == "__main__":
