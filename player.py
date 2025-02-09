@@ -18,6 +18,7 @@ class SpotifyPlayer:
         self.volume_level = VOLUME_LEVEL
         self.play_timer = None
         self.is_playing = False
+        self.start_timer = None
 
     def get_active_device(self):
         """Check for an active Spotify device."""
@@ -59,6 +60,18 @@ class SpotifyPlayer:
         self.play_timer.daemon = True  # Make thread exit when main program exits
         self.play_timer.start()
 
+    def _delayed_start(self, track_uri, device_id, start_time, duration):
+        """Start playback after a small delay."""
+        time.sleep(0.5)  # Small delay before starting
+        try:
+            self.sp.start_playback(device_id=device_id, uris=[track_uri], position_ms=int(start_time * 1000))
+            # Schedule pausing after the specified duration
+            self._schedule_pause(device_id, duration)
+            return True
+        except SpotifyException as e:
+            print(f"Error starting playback: {e}")
+            return False
+
     def play_track(self, track_uri, start_time=0, duration=PLAYBACK_DURATION, device_id=None):
         """Play the track for a specific duration starting from the specified time."""
         if not device_id:
@@ -74,15 +87,16 @@ class SpotifyPlayer:
             print(f"Error setting volume: {e}")
             # Continue even if volume setting fails
 
-        # Start playback
-        try:
-            self.sp.start_playback(device_id=device_id, uris=[track_uri], position_ms=int(start_time * 1000))
-            # Schedule pausing after the specified duration
-            self._schedule_pause(device_id, duration)
-            return True
-        except SpotifyException as e:
-            print(f"Error starting playback: {e}")
-            return False
+        # Cancel any existing start timer
+        if self.start_timer and self.start_timer.is_alive():
+            self.start_timer.join()
+
+        # Start playback in a separate thread with delay
+        self.start_timer = threading.Thread(target=self._delayed_start, 
+                                          args=(track_uri, device_id, start_time, duration))
+        self.start_timer.daemon = True
+        self.start_timer.start()
+        return True
 
     def pause_playback(self, device_id=None):
         """Pause playback on the specified device."""
@@ -141,7 +155,7 @@ class SpotifyPlayer:
             print("No active Spotify device found! Start Spotify on a device.")
             return False
 
-        return self.play_track(self.current_track, 0, self.current_play_time, device_id)
+        return self.play_track(self.current_track, 0, self.current_play_time, device_id), self.current_play_time
 
     def set_volume(self, volume_level):
         """Set the playback volume (0-100)."""

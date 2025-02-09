@@ -146,7 +146,7 @@ class GameLogic:
         
         return track_uris, track_names, track_artists
 
-    def select_random_track(self):
+    def play_random(self):
         if not self.track_uris:
             return None, None
 

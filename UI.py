@@ -934,7 +934,6 @@ class StartScreen:
                     self.game_logic.track_names = track_names
                     self.game_logic.track_artists = track_artists
                     self.game_logic.set_game_mode(selected_mode)  # Set the game mode
-                    self.game_logic.select_random_track()
                     return True, True  # Continue running, switch to game screen
                 
                 return False, None  # Stop running if no tracks found
@@ -1001,7 +1000,9 @@ class GameScreen:
         self.stop_game = False
         self.ready_to_quit = False
         self.transitioning = False
-
+        self.anim_playing = False
+        self.play_song_with_animation()
+        
     def setup_widgets(self):
         # Input Box
         self.input_box = InputBox(
@@ -1082,6 +1083,19 @@ class GameScreen:
         self.song_info_fade_out_duration = 500
         self.song_info_fade_out_alpha = 255
         
+    def play_song_with_animation(self):
+        if not self.anim_playing:
+            self.show_play_window = True
+            self.game_logic.play_random()
+            self.play_animation(PLAYBACK_DURATION*1000)
+            
+    def replay_song_with_animation(self):
+        if not self.anim_playing:
+            self.show_play_window = True
+            _ , duration = self.game_logic.replay_current_track()
+            print(duration)
+            self.play_animation(duration*1000)
+            
     def update(self):
         if self.ready_to_quit:
             if self.game_logic.lives <= 0 or self.show_summary:
@@ -1098,18 +1112,19 @@ class GameScreen:
                 if self.input_box.handle_event(event):
                     if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN and self.input_box.text != "":
                         correct, points, message = self.game_logic.check_guess(self.input_box.text)
+                        self.input_box.text = ""
+                        self.input_box.cursor_pos = 0
+                        self.game_logic.typed = True
+                        print(message)
                         if correct:
                             self.show_feedback(True)
-                            self.game_logic.select_random_track()
+                            
+                            self.play_song_with_animation()
                         else:
                             self.show_feedback(False)
                             if self.game_logic.lives <= 0:
                                 self.transitioning = True
                                 self.show_song_info(self.game_logic.current_track_name, self.game_logic.current_track_artist)
-                        self.input_box.text = ""
-                        self.input_box.cursor_pos = 0
-                        self.game_logic.typed = True
-                        print(message)
                     continue  # Skip other event handling if input box handled the event
 
                 # Handle other events
@@ -1127,17 +1142,16 @@ class GameScreen:
             for button in self.buttons:
                 if button.handle_event(event):
                     if button.text == "Replay":
-                        self.show_play_window = True
-                        self.play_animation(5000)
+                        self.replay_song_with_animation()
                     elif button.text == "Give Up":
                         self.game_logic.lives = max(0, self.game_logic.lives - 1)
                         self.game_logic.typed = True
-                        self.game_logic.select_random_track()
                         self.show_feedback(False)
                         self.update_lives_label()
                         if self.game_logic.lives <= 0:
                             self.transitioning = True
                         self.show_song_info(self.game_logic.current_track_name, self.game_logic.current_track_artist)
+                        self.play_song_with_animation()
                     elif button.text == "Quit":
                         self.stop_game = True
                         self.show_summary = False
@@ -1293,8 +1307,11 @@ class GameScreen:
         # Animation parameters
         grow_duration = 500  # ms
         shrink_duration = 500  # ms
-        spin_duration = msPlayTime - grow_duration - shrink_duration
+        spin_duration = msPlayTime+500
         start_time = pygame.time.get_ticks()
+        
+        #update the animation flag
+        self.anim_playing = True
 
         # Animation loop
         while True:
@@ -1408,6 +1425,7 @@ class GameScreen:
 
         # Reset states after animation
         self.show_play_window = False
+        self.anim_playing = False
         self.draw()
 
 class SummaryScreen:
