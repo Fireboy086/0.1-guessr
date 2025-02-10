@@ -1001,6 +1001,9 @@ class GameScreen:
         self.ready_to_quit = False
         self.transitioning = False
         self.anim_playing = False
+        
+        self.testFlag = False
+        
         self.play_song_with_animation()
         
     def setup_widgets(self):
@@ -1095,7 +1098,26 @@ class GameScreen:
             _ , duration = self.game_logic.replay_current_track()
             print(duration)
             self.play_animation(duration*1000)
-            
+
+    def pause_with_updates(self, ms_pause):
+        start_time = pygame.time.get_ticks()
+        while pygame.time.get_ticks() - start_time < ms_pause:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                self.handle_events(event)
+                self.input_box.handle_event(event)
+                for button in self.buttons:
+                    if button.handle_event(event):
+                        continue
+                    
+                # Move update_animations() inside the event loop
+                self.update_animations()
+                
+            self.draw()
+            clock.tick(60)
+    
     def update(self):
         if self.ready_to_quit:
             if self.game_logic.lives <= 0 or self.show_summary:
@@ -1103,6 +1125,11 @@ class GameScreen:
             elif self.stop_game:
                 return False, None  # Just quit without summary
 
+        if self.testFlag:
+            self.testFlag = False
+            self.pause_with_updates(500)
+            self.play_song_with_animation()
+            
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False, None
@@ -1118,8 +1145,6 @@ class GameScreen:
                         print(message)
                         if correct:
                             self.show_feedback(True)
-                            
-                            self.play_song_with_animation()
                         else:
                             self.show_feedback(False)
                             if self.game_logic.lives <= 0:
@@ -1177,6 +1202,9 @@ class GameScreen:
         if current_time - self.feedback_timer < self.feedback_duration:
             elapsed_time = current_time - self.feedback_timer
             self.feedback_alpha = int(255 * (1 - elapsed_time / self.feedback_duration))
+            if self.feedback_alpha <= 10:
+                self.testFlag = True
+                self.feedback_alpha = 0
         else:
             self.feedback_alpha = 0
         
@@ -1329,6 +1357,7 @@ class GameScreen:
                     if button.handle_event(event):
                         continue
                 self.update()
+                self.update_animations()
 
             # Clear animation surface
             animation_surface.fill((0, 0, 0, 0))
