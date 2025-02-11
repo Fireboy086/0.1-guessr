@@ -180,9 +180,9 @@ class Dropdown:
         self.selected_option = str(options[0]) if options else ""  # Convert to string
         self.is_open = False
         self.drop_height = drop_height or 200
-        # Create a ScrollableBox for options with smaller line size
+        # Create a ScrollBox for options with smaller line size
         dropdown_height = min(self.drop_height, len(options) * height)  # Max height of 200 pixels
-        self.options_box = ScrollableBox(
+        self.options_box = ScrollBox(
             pygame.Rect(
                 self.rect.x,
                 self.rect.bottom,
@@ -261,7 +261,7 @@ class Dropdown:
 
         return False
 
-class ScrollableBox:
+class ScrollBox:
     def __init__(self, rect, font, text_color, bg_color, border_radius=0, max_distance=2, 
                  line_color=None, text_align="left", show_separators=True, show_scrollbar=True,
                  line_size=None,max_height=None):
@@ -1023,7 +1023,7 @@ class GameScreen:
             SCREEN_WIDTH - 2*theme.padding, 
             theme.autoguess_height
         )
-        self.autoguess_box = ScrollableBox(
+        self.autoguess_box = ScrollBox(
             autoguess_rect, 
             theme.input_font, 
             theme.text, 
@@ -1471,7 +1471,7 @@ class SummaryScreen:
             SCREEN_WIDTH - 2*theme.padding,
             SCREEN_HEIGHT - 2*theme.padding - 100
         )
-        self.summary_box = ScrollableBox(
+        self.summary_box = ScrollBox(
             summary_rect,
             theme.input_font,
             theme.text,
@@ -1539,7 +1539,7 @@ class CheersToSetupifyFileForLastingMeThatLongIWantItToBerememberedAsIsButNotFor
     def setup_widgets(self):
         # Info ScrollBox
         info_text = [
-            {"text": "Spotify API Setup", "line_size": 48},
+            {"text": "Spotify API Setup", "line_size": 48, "text_color": theme.accent},
             {"text": "", "line_size": 20},
             {"text": "To use this application, you need Spotify API credentials.", "line_size": 24},
             {"text": "Follow these steps:", "line_size": 24},
@@ -1560,7 +1560,7 @@ class CheersToSetupifyFileForLastingMeThatLongIWantItToBerememberedAsIsButNotFor
             SCREEN_WIDTH - 2*theme.padding,
             250
         )
-        self.info_box = ScrollableBox(
+        self.info_box = ScrollBox(
             info_rect,
             theme.input_font,
             theme.text,
