@@ -160,7 +160,7 @@ class GameLogic:
         if track_uri:
             self.current_track_name = track_name
             self.current_track_artist = track_artist
-            print(self.current_track_name, self.current_track_artist)
+            # print(self.current_track_name, self.current_track_artist)
             return self.current_track_name, self.current_track_artist
         return None, None
 
