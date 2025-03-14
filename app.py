@@ -27,6 +27,9 @@ class SpotifyGuessingGameApp(ctk.CTk):
         self.geometry("1000x700")
         self.minsize(800, 600)
         
+        # Center the window
+        self.center_window()
+        
         # Use provided credentials or fall back to config values
         self.client_id = client_id or CLIENT_ID
         self.client_secret = client_secret or CLIENT_SECRET
@@ -117,6 +120,20 @@ class SpotifyGuessingGameApp(ctk.CTk):
         else:
             self.konami_index = 0
     
+    def center_window(self):
+        """Center the window on the screen"""
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        window_width = 1000
+        window_height = 700
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        self.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        
+        # Make window appear on top and lift it
+        self.lift()
+        self.focus_force()
+    
     def open_configuration_window(self):
         """Open a modal window for game configuration"""
         config_window = ctk.CTkToplevel(self)
@@ -124,6 +141,9 @@ class SpotifyGuessingGameApp(ctk.CTk):
         config_window.geometry("500x300")
         config_window.transient(self)
         config_window.grab_set()
+        
+        # Center the configuration window
+        self.center_toplevel(config_window, 500, 300)
         
         # Create a frame for the configuration options
         config_frame = ctk.CTkFrame(config_window)
@@ -182,6 +202,9 @@ class SpotifyGuessingGameApp(ctk.CTk):
             message.transient(self)
             message.grab_set()
             
+            # Center the message window
+            self.center_toplevel(message, 300, 100)
+            
             ctk.CTkLabel(message, text="Configuration updated successfully.").pack(pady=20)
             ctk.CTkButton(message, text="OK", command=message.destroy).pack()
             
@@ -193,5 +216,20 @@ class SpotifyGuessingGameApp(ctk.CTk):
             message.transient(self)
             message.grab_set()
             
+            # Center the message window
+            self.center_toplevel(message, 300, 100)
+            
             ctk.CTkLabel(message, text="Please enter valid values.").pack(pady=20)
-            ctk.CTkButton(message, text="OK", command=message.destroy).pack() 
+            ctk.CTkButton(message, text="OK", command=message.destroy).pack()
+    
+    def center_toplevel(self, window, width, height):
+        """Center a toplevel window on the screen"""
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
+        window.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Make window appear on top and lift it
+        window.lift()
+        window.focus_force() 

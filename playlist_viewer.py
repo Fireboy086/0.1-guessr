@@ -25,6 +25,9 @@ class PlaylistViewer(ctk.CTk):
         self.geometry("900x600")
         self.minsize(800, 500)
         
+        # Center the window
+        self.center_window()
+        
         # Initialize Spotify API
         self.setup_spotify_api()
         
@@ -33,6 +36,32 @@ class PlaylistViewer(ctk.CTk):
         
         # Image cache for playlist covers
         self.image_cache = {}
+        
+    def center_window(self):
+        """Center the window on the screen"""
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        window_width = 900
+        window_height = 600
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        self.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        
+        # Make window appear on top and lift it
+        self.lift()
+        self.focus_force()
+    
+    def center_toplevel(self, window, width, height):
+        """Center a toplevel window on the screen"""
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
+        window.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Make window appear on top and lift it
+        window.lift()
+        window.focus_force()
         
     def setup_spotify_api(self):
         """Set up the Spotify API client"""

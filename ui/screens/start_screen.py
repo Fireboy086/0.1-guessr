@@ -1138,21 +1138,18 @@ class StartScreen(ctk.CTkFrame):
             self._show_error(f"Error: {error_msg}")
     
     def _show_error(self, message):
-        """Show error message"""
+        """Show an error message in a modal window"""
         # Reset button
         self.start_button.configure(state="normal", text="Start Game")
         
-        # Create popup
         error_window = ctk.CTkToplevel(self)
         error_window.title("Error")
         error_window.geometry("300x150")
-        error_window.resizable(False, False)
-        error_window.grab_set()  # Make modal
+        error_window.transient(self.parent)
+        error_window.grab_set()
         
-        # Center on parent
-        x = self.winfo_rootx() + (self.winfo_width() // 2) - 150
-        y = self.winfo_rooty() + (self.winfo_height() // 2) - 75
-        error_window.geometry(f"+{x}+{y}")
+        # Center the error window
+        self.center_toplevel(error_window, 300, 150)
         
         # Error message
         ctk.CTkLabel(
@@ -1160,12 +1157,23 @@ class StartScreen(ctk.CTkFrame):
             text=message,
             font=ctk.CTkFont(size=14),
             wraplength=250
-        ).pack(pady=(30, 15), padx=20)
+        ).pack(pady=(20, 10), padx=20)
         
         # OK button
         ctk.CTkButton(
             error_window,
             text="OK",
-            command=error_window.destroy,
-            width=100
-        ).pack(pady=10) 
+            command=error_window.destroy
+        ).pack(pady=(0, 20))
+        
+    def center_toplevel(self, window, width, height):
+        """Center a toplevel window on the screen"""
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
+        window.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Make window appear on top and lift it
+        window.lift()
+        window.focus_force() 
