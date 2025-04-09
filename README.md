@@ -1,103 +1,72 @@
-Spotify Guessing Game
-i am too lazy to make a readme myself so i used an AI
+# Spotify Guessing Game (CLI)
 
-## Overview
-
-The Spotify Guessing Game is a fun and engaging game where users guess song titles and artists from a playlist. Players can challenge themselves with multiple difficulty levels and modes, including Hard, Harder, and Harder Harder Modes. The game features a modern UI built with customtkinter.
+A command-line version of the Spotify song guessing game. Test your music knowledge by listening to song snippets and guessing the titles.
 
 ## Features
 
-### Dynamic Difficulty Levels:
+- CLI-based interface, no UI dependencies
+- Connect to your Spotify account to access your playlists
+- Four difficulty levels: Normal, Hard, Harder, and Expert
+- Play with your own playlists, liked songs, or any Spotify playlist URL
+- Test your musical knowledge in a fun and challenging way
 
-- **Normal Mode**: Suggestions include partial matches.
-- **Hard Mode**: Suggestions only if input is close to the correct answer.
-- **Harder Mode**: Suggestions require exact song name.
-- **Harder Harder Mode**: Suggestions require both song name and artist.
+## Requirements
 
-### Game Features:
-- Beautiful modern UI using customtkinter
-- Visual feedback for correct/incorrect guesses
-- Playlist Options: Choose from your Spotify playlists, liked songs, or custom playlist URLs.
-- Customizable Settings: Configure playback duration, max lives, and volume.
-- Konami Code Easter Egg: Unlock configuration settings with a secret code.
-
-## How to Play
-
-1. Launch the game.
-2. Select a playlist or enter a custom playlist URL.
-3. Choose a game mode.
-4. Guess the song playing within the time limit.
-5. Review your performance in the summary screen.
+- Python 3.6+
+- Spotify Premium account
+- Active Spotify device (phone, desktop app, web player, etc.)
 
 ## Installation
 
-### Prerequisites
-- Python 3.8+
-- Spotify Developer Account
-- Spotipy Library
-- customtkinter Library
-- Pillow Library
+### Quick Install
+1. Run the installation script:
+   ```
+   ./install.sh
+   ```
 
-### Setup
-1. Clone the repository:
-```
-git clone https://github.com/Fireboy086/0.1-guessr.git
-```
+### Manual Installation
+1. Clone this repository
+2. Install the required packages:
+   ```
+   pip install -r requirements.txt
+   ```
 
-2. Install dependencies:
-```
-pip install -r requirements.txt
-```
+## Setup
 
-3. Set up Spotify API credentials:
-   - Visit Spotify Developer Dashboard.
-   - Create a new app and note the Client ID and Client Secret.
-   - Add a Redirect URI: http://localhost:8888/callback/.
-   - Update the config.py file with your credentials or run the game to input them.
+1. You'll need to create a Spotify Developer App to use this game
+2. The first time you run the game, you'll be guided through this process
+3. You'll need your Spotify Client ID and Client Secret, which you can get from the Spotify Developer Dashboard
 
-## Configuration
+## Usage
 
-Customize gameplay settings using the Konami code (↑↑↓↓←→←→ba):
+1. Run the game using one of these methods:
+   ```
+   # If you used the installation script
+   ./spotify_guessr.py
+   
+   # Or using Python directly
+   python3 spotify_guessr.py
+   ```
 
-- **PLAYBACK_DURATION**: Duration of song playback in seconds.
-- **MAX_GUESS_COUNT**: Maximum guesses allowed per song.
-- **MAX_LIVES**: Number of lives in a game.
-- **VOLUME_LEVEL**: Playback volume (0-100).
+2. Follow the on-screen instructions to:
+   - Select a Spotify device for playback
+   - Choose a playlist to play from
+   - Select a difficulty level
+   - Start guessing songs!
 
-## Project Structure
+## Game Modes
 
-```
-.
-├── main.py                 # Main entry point
-├── app.py                  # Main application window
-├── spotify_manager.py      # Handles Spotify API interactions
-├── game_logic.py           # Core game logic
-├── ui/                     # UI components
-│   ├── screens/            # Game screens
-│   │   ├── start_screen.py    # Playlist selection screen
-│   │   ├── game_screen.py     # Main game screen
-│   │   └── summary_screen.py  # End game summary
-│   └── components/         # Reusable UI components
-├── config.py               # Configuration settings
-├── requirements.txt        # Project dependencies
-└── README.md               # This file
-```
+- **Normal**: Partial matches and up to 2 errors allowed
+- **Hard**: Close matches with up to 1 error allowed
+- **Harder**: Exact title matches only
+- **Expert**: Exact "title by artist" matches only
 
-## Troubleshooting
+## Tips
 
-- **Error: No active Spotify device found**:
-  Ensure Spotify is running on a device and logged in.
-
-- **Invalid Playlist URL**:
-  Check the format of the Spotify playlist URL.
-
-- **Playback Restrictions**:
-  Some tracks may be restricted. Skip to the next song in such cases.
-
-## Contribution
-
-Feel free to fork the repository and submit pull requests. Contributions are welcome!
+- Make sure Spotify is open on a device before starting the game
+- Higher difficulty modes require more precise guesses
+- You can replay song snippets if you need another listen
 
 ## License
 
-This project is licensed under the MIT License. See LICENSE for more details.
+See the LICENSE file for details.
