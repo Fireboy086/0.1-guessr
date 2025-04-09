@@ -66,7 +66,8 @@ class SummaryScreen(ctk.CTkFrame):
             command=self._on_menu_button_click,
             width=150,
             height=40,
-            font=ctk.CTkFont(size=16)
+            font=ctk.CTkFont(size=16),
+            fg_color=("#f0f0f0", "#1e1e1e")
         )
         self.menu_button.pack(side="left", padx=20)
         

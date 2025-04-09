@@ -16,10 +16,15 @@ class SpotifyManager:
         self.current_track_artist = None
         self.playback_active = False
         self.pause_timer = None
+        self.selected_device_id = None
     
     def get_active_device(self):
         """Get the active Spotify device"""
         try:
+            # If a device was specifically selected, use that one
+            if self.selected_device_id:
+                return self.selected_device_id
+                
             devices = self.sp.devices()
             if not devices['devices']:
                 return None
@@ -29,6 +34,20 @@ class SpotifyManager:
         except Exception as e:
             print(f"Error getting active device: {e}")
             return None
+    
+    def get_available_devices(self):
+        """Get all available Spotify devices"""
+        try:
+            devices = self.sp.devices()
+            return devices['devices'] if 'devices' in devices else []
+        except Exception as e:
+            print(f"Error getting available devices: {e}")
+            return []
+    
+    def set_device(self, device_id):
+        """Set the active device for playback"""
+        self.selected_device_id = device_id
+        return True
     
     def _schedule_pause(self, device_id, duration):
         """Schedule a pause after the given duration"""
@@ -176,4 +195,4 @@ class SpotifyManager:
             return self.sp.current_playback()
         except Exception as e:
             print(f"Error getting playback state: {e}")
-            return None 
+            return None
