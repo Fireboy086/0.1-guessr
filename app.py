@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, flash
 import os
 from dotenv import load_dotenv
 import spotipy
@@ -6,24 +6,32 @@ from spotipy.oauth2 import SpotifyOAuth
 import time
 # Import scope from config
 from config import SCOPE 
+# Import credential loading function
+from spotify_guessr import load_spotify_credentials
+# Import SpotifyManager
+from spotify_manager import SpotifyManager
+# Import GameLogic (needed later)
+from game_logic import GameLogic
 
-# Load environment variables from .env file
+# Load environment variables from .env file (primarily for FLASK_SECRET_KEY)
 load_dotenv()
 
 app = Flask(__name__)
 # Make sure FLASK_SECRET_KEY is set in your .env file for session security
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "fallback-secret-key-please-set") 
+app.secret_key = os.getenv("FLASK_SECRET_KEY")
+if not app.secret_key:
+    raise ValueError("FLASK_SECRET_KEY not found in environment variables. Please set it in a .env file.")
+
 # Store token info in session
 app.config['SESSION_COOKIE_NAME'] = 'spotify-login-session'
 
-# Spotify Credentials - Loaded from environment variables
-CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
-CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
-REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
+# Spotify Credentials - Loaded from credentials.ini
+CLIENT_ID, CLIENT_SECRET, REDIRECT_URI = load_spotify_credentials()
 
 # Ensure credentials are loaded
 if not CLIENT_ID or not CLIENT_SECRET or not REDIRECT_URI:
-    raise ValueError("Spotify API credentials (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI) not found in environment variables.")
+    # Adjust error message to reflect loading from .ini
+    raise ValueError("Spotify API credentials (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI) could not be loaded from credentials.ini. Please ensure the file exists and is correctly formatted.")
 
 # --- Spotify Auth Helper ---
 
@@ -82,7 +90,7 @@ def login():
     auth_url = sp_oauth.get_authorize_url()
     return redirect(auth_url)
 
-@app.route('/callback')
+@app.route('/callback/')
 def callback():
     sp_oauth = create_spotify_oauth()
     session.clear() # Clear potential old session data
@@ -111,6 +119,49 @@ def logout():
     session.clear() # Clear the entire session
     # Redirect to index, which will now show the login link
     return redirect(url_for('index'))
+
+# --- Game Setup Routes ---
+
+@app.route('/select-device', methods=['GET', 'POST'])
+def select_device():
+    token_info = get_token_info()
+    if not token_info:
+        return redirect(url_for('index'))
+
+    try:
+        sp = spotipy.Spotify(auth=token_info['access_token'])
+        spotify_manager = SpotifyManager(sp)
+
+        if request.method == 'POST':
+            device_id = request.form.get('device_id')
+            if device_id:
+                # Verify the selected device_id is valid (optional but good practice)
+                available_devices = spotify_manager.get_available_devices()
+                if any(d['id'] == device_id for d in available_devices):
+                    session['device_id'] = device_id
+                    # Redirect to the next step (playlist selection)
+                    return redirect(url_for('select_playlist')) # Adjust if route name is different
+                else:
+                    flash("Invalid device selected. Please try again.")
+                    # Fall through to GET to re-render the device list
+            else:
+                flash("Please select a device.")
+                # Fall through to GET to re-render the device list
+
+        # GET request: Fetch and display devices
+        devices = spotify_manager.get_available_devices()
+        # Note: get_available_devices already returns a list of dicts with 'id', 'name', 'type'
+        return render_template('select_device.html', devices=devices)
+
+    except spotipy.exceptions.SpotifyException as e:
+        # Handle potential API errors (e.g., token expired, network issue)
+        print(f"Spotify API error in select_device: {e}")
+        flash(f"Error communicating with Spotify: {e}. Please try logging out and back in.")
+        return redirect(url_for('logout')) # Redirect to logout might be safest
+    except Exception as e:
+        print(f"Unexpected error in select_device: {e}")
+        flash("An unexpected error occurred. Please try again.")
+        return redirect(url_for('index'))
 
 # --- Main Execution --- 
 

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Select Device - Spotify Guessr{% endblock %}
+
+{% block content %}
+    <h2>Select Playback Device</h2>
+    
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul class=flashes>
+        {% for message in messages %}
+          <li style="color: red;">{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    {% if devices %}
+        <form method="POST" action="{{ url_for('select_device') }}">
+            <p>Choose a device to play music on:</p>
+            <ul>
+                {% for device in devices %}
+                    <li>
+                        <input type="radio" name="device_id" value="{{ device.id }}" id="device_{{ loop.index }}" required>
+                        <label for="device_{{ loop.index }}">{{ device.name }} ({{ device.type }})</label>
+                    </li>
+                {% endfor %}
+            </ul>
+            <button type="submit" class="button">Confirm Device</button>
+        </form>
+    {% else %}
+        <p>No active Spotify devices found. Please open Spotify on a device and ensure it's connected to the internet, then <a href="{{ url_for('select_device') }}">refresh this page</a>.</p>
+    {% endif %}
+    
+    <p style="margin-top: 2em;"><a href="{{ url_for('index') }}">Back to Home</a></p>
+{% endblock %} 
