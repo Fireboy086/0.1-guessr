@@ -23,7 +23,7 @@
       {% endif %}
     {% endwith %}
 
-    <p>Listen to the clip and make your guess!</p>
+    <p id="content-start-marker">Listen to the clip and make your guess!</p>
 
     {# Guess Form #}
     <form id="guess-form" method="POST" action="{{ url_for('play_game') }}" style="margin-bottom: 1em;">
@@ -52,18 +52,93 @@
 {% endblock %}
 
 {% block scripts %}
+{# Include Spotify SDK #}
+<script src="https://sdk.scdn.co/spotify-player.js"></script>
+
 <script>
+    // --- SDK Setup ---
+    const useSdkPlayer = {{ use_sdk_player | tojson }};
+    const accessToken = {{ access_token | tojson }};
+    let sdkPlayer = null;
+    let sdkDeviceId = null;
+    
+    window.onSpotifyWebPlaybackSDKReady = () => {
+        if (useSdkPlayer && accessToken) {
+            console.log("Initializing Spotify Web Playback SDK...");
+            sdkPlayer = new Spotify.Player({
+                name: 'Spotify Guessr Game',
+                getOAuthToken: cb => { 
+                    console.log("SDK getOAuthToken providing token:", accessToken); 
+                    cb(accessToken); 
+                },
+                volume: 0.4 // Lower initial volume (0.0 to 1.0)
+            });
+
+            // Error handling
+            sdkPlayer.addListener('initialization_error', ({ message }) => { 
+                console.error('SDK Init Error:', message); 
+                showMessage('Failed to initialize web player: ' + message, 'error');
+            });
+            sdkPlayer.addListener('authentication_error', ({ message }) => { 
+                console.error('SDK Auth Error:', message); 
+                showMessage('Web player authentication failed: ' + message, 'error');
+                // Might need to redirect to login?
+            });
+            sdkPlayer.addListener('account_error', ({ message }) => { 
+                console.error('SDK Account Error:', message);
+                showMessage('Account error (Non-Premium?): ' + message, 'error');
+            });
+            sdkPlayer.addListener('playback_error', ({ message }) => { 
+                console.error('SDK Playback Error:', message);
+                showMessage('Web player playback error: ' + message, 'error');
+            });
+
+            // Player ready
+            sdkPlayer.addListener('ready', ({ device_id }) => {
+                console.log('SDK Player Ready with Device ID:', device_id);
+                sdkDeviceId = device_id;
+                // Explicitly set volume after ready
+                sdkPlayer.setVolume(0.2).then(() => {
+                    console.log('Volume set to 20%');
+                }).catch(err => console.error('Error setting volume:', err));
+                // Optional: Register device ID with backend here if needed elsewhere
+            });
+
+            // Player not ready
+            sdkPlayer.addListener('not_ready', ({ device_id }) => {
+                console.log('Device ID has gone offline:', device_id);
+                sdkDeviceId = null;
+            });
+
+            // Connect to the player!
+            sdkPlayer.connect().then(success => {
+                if (success) {
+                    console.log('The Web Playback SDK successfully connected to Spotify!');
+                } else {
+                    console.error('The Web Playback SDK failed to connect.');
+                }
+            });
+
+        } else {
+            console.log("Web Playback SDK not used or no access token.");
+        }
+    };
+    // --- End SDK Setup ---
+
     // Simple function to display flash-like messages dynamically
-    function showMessage(text, type = 'info') {
+    function showMessage(text, type = 'info', duration = 3000) { // Default duration 3 seconds
         const messagesDiv = document.querySelector('.flashes') || document.createElement('div');
         if (!document.querySelector('.flashes')) {
             messagesDiv.className = 'flashes';
             messagesDiv.style.marginBottom = '1em';
-            document.querySelector('form[action="{{ url_for('play_game') }}"]').parentNode.insertBefore(messagesDiv, document.querySelector('p')); // Insert before the <p>
+            // Insert messages container before the main paragraph
+            const firstParagraph = document.querySelector('#content-start-marker'); // Need a marker
+            if (firstParagraph) {
+                 firstParagraph.parentNode.insertBefore(messagesDiv, firstParagraph);
+            } else { // Fallback if marker not found
+                 document.querySelector('form[action="{{ url_for('play_game') }}"]').parentNode.insertBefore(messagesDiv, document.querySelector('p'));
+            }
         }
-        
-        // Clear previous messages maybe?
-        // messagesDiv.innerHTML = ''; 
         
         const messageDiv = document.createElement('div');
         messageDiv.className = `flash flash-${type}`;
@@ -79,10 +154,27 @@
         messageDiv.style.backgroundColor = bgColor;
         messageDiv.style.border = `1px solid ${borderColor}`;
         messageDiv.style.color = '#333';
-        messageDiv.style.marginBottom = '5px'; // Space between messages
+        messageDiv.style.marginBottom = '5px';
+        // Add transition for smooth removal
+        messageDiv.style.transition = 'opacity 0.5s ease-out'; 
         messageDiv.textContent = text;
         
         messagesDiv.appendChild(messageDiv);
+
+        // Auto-remove the message after the duration
+        setTimeout(() => {
+            messageDiv.style.opacity = '0'; // Start fade out
+            // Remove element after fade out completes
+            setTimeout(() => {
+                 if (messageDiv.parentNode) { // Check if it hasn't been removed already
+                    messageDiv.remove();
+                 }
+                 // Optional: Remove the container if empty
+                 if (messagesDiv.children.length === 0 && messagesDiv.parentNode) {
+                     messagesDiv.remove();
+                 }
+            }, 500); // Wait for fade out transition (0.5s)
+        }, duration); 
     }
 
     // Function to update UI elements (score, lives, guesses, replays)
@@ -107,14 +199,95 @@
         }
     }
 
-    // Function to trigger fetching and starting the next round
+    // Function to update debug panel (if visible)
+    function updateDebugPanel(data) {
+        const debugPanel = document.querySelector('#admin-debug-panel'); // Need ID on panel div
+        if (!debugPanel || !sessionStorage.getItem('debug_enabled')) return; // Check if enabled via session storage perhaps?
+        
+        // Or simpler: check if the debug content block is visible/exists
+        const debugContent = document.querySelector('#debug-content-area'); // Need ID on the <pre> or inner div
+        if (!debugContent) return;
+
+        if (data.round !== undefined) document.querySelector('#debug-round').textContent = data.round;
+        if (data.score !== undefined) document.querySelector('#debug-score').textContent = data.score;
+        if (data.lives !== undefined) document.querySelector('#debug-lives').textContent = data.lives;
+        if (data.guesses_left !== undefined) document.querySelector('#debug-guesses').textContent = data.guesses_left;
+        if (data.replays_left !== undefined) document.querySelector('#debug-replays').textContent = data.replays_left;
+        // Note: Played Indices, Song Index, Correct This Round aren't sent back in basic update, only on full page load
+        // Update current song details if provided
+        if (data.current_song_name !== undefined && data.current_song_artist !== undefined) {
+            document.querySelector('#debug-song-details').textContent = `${data.current_song_name} by ${data.current_song_artist}`;
+        } else {
+            document.querySelector('#debug-song-details').textContent = 'N/A'; 
+        }
+        // Update URI and Start MS
+        if (data.current_song_uri !== undefined) {
+             document.querySelector('#debug-song-uri').textContent = data.current_song_uri;
+        } else {
+             document.querySelector('#debug-song-uri').textContent = 'N/A';
+        }
+        if (data.current_song_start_ms !== undefined) {
+             document.querySelector('#debug-song-start-ms').textContent = data.current_song_start_ms;
+        } else {
+             document.querySelector('#debug-song-start-ms').textContent = 'N/A';
+        }
+    }
+
+    // --- Playback Function (SDK or relies on Backend) --- 
+    let currentPauseTimer = null; // Keep track of JS pause timer
+    function playTrack(trackUri, startMs, durationS) {
+        // --- !! ADDED PARAMETER LOGGING !! ---
+        console.log(`Attempting playTrack: URI=${trackUri}, Start=${startMs}ms, Duration=${durationS}s, SDKDevice=${sdkDeviceId}, HasToken=${!!accessToken}`);
+        // --- !! END ADDED LOGGING !! ---
+        
+        if (useSdkPlayer && sdkPlayer && sdkDeviceId && accessToken) { // Add accessToken check here too
+            console.log(`SDK Playing via fetch: ${trackUri} from ${startMs}ms for ${durationS}s on ${sdkDeviceId}`);
+            fetch(`https://api.spotify.com/v1/me/player/play?device_id=${sdkDeviceId}`, {
+                method: 'PUT',
+                body: JSON.stringify({ uris: [trackUri], position_ms: startMs }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`
+                },
+            })
+            .then(response => {
+                // --- !! ADDED RESPONSE LOGGING !! ---
+                console.log(`Spotify API Play Response Status: ${response.status} ${response.statusText}`);
+                // --- !! END ADDED LOGGING !! ---
+                if (!response.ok) {
+                    console.error('Spotify API Play Error Details:', response);
+                     response.json().then(err => showMessage(`Error starting web playback: ${err.error?.message || response.statusText}`, 'error')).catch(() => showMessage(`Error starting web playback: ${response.statusText}`, 'error'));
+                } else {
+                    console.log("SDK Play command sent ok.");
+                    // Schedule pause using JS setTimeout
+                    clearTimeout(currentPauseTimer); 
+                    currentPauseTimer = setTimeout(() => {
+                        if (sdkPlayer) {
+                            sdkPlayer.pause().then(() => {
+                                console.log('SDK Paused playback via JS timer.');
+                            });
+                        }
+                    }, durationS * 1000);
+                }
+            })
+            .catch(error => {
+                console.error('Fetch error during SDK play:', error);
+                showMessage('Error sending play command to Spotify.', 'error');
+            });
+        } else if (!useSdkPlayer) {
+            console.log("Relying on backend for playback.");
+        } else {
+            showMessage("Web player not ready or token missing. Cannot play track.", 'error');
+            console.error("Attempted to play via SDK, but player/device ID/token not ready.", {sdkPlayer, sdkDeviceId, accessToken});
+        }
+    }
+
+    // --- Game Logic Functions --- 
     function startNextRound() {
         console.log("Requesting next round...");
         fetch("{{ url_for('play_game') }}", {
             method: 'GET', // GET request tells server to start next round if needed
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest' // Identify as AJAX
-            }
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
         .then(response => response.json())
         .then(data => {
@@ -122,15 +295,21 @@
             if (data.error) {
                 showMessage(data.error, 'error');
             } else if (data.game_over) {
-                // Redirect or show game over message
                 let message = `Game Over! Final Score: ${data.final_score}`;
                 if(data.status === 'won') message = `You Won! Final Score: ${data.final_score}`;
-                alert(message); // Simple alert for now
-                window.location.href = "{{ url_for('index') }}"; // Redirect home
+                alert(message); 
+                window.location.href = "{{ url_for('index') }}";
             } else {
-                // Update UI for the new round
                 updateUI(data);
-                // Re-enable guess form, clear input
+                updateDebugPanel(data);
+                // If SDK is used, trigger playback now
+                if (data.use_sdk_player && data.current_song_uri) {
+                    // Removed storing info for replay
+                    // Removed mobile check and button logic
+                    // Directly play track if SDK is used
+                    playTrack(data.current_song_uri, data.current_song_start_ms, data.playback_duration_s);
+                }
+                // Re-enable form
                 document.querySelector('#guess-form button').disabled = false;
                 document.querySelector('#guess_input').value = '';
                 document.querySelector('#guess_input').focus();
@@ -143,8 +322,6 @@
     }
 
     // --- Event Listeners --- 
-
-    // Guess Form Submission
     document.getElementById('guess-form').addEventListener('submit', function(event) {
         event.preventDefault(); // Prevent default form submission
         const guessInput = document.getElementById('guess_input');
@@ -158,7 +335,8 @@
         
         submitButton.disabled = true; // Disable button during request
         
-        fetch(this.action, {
+        // Use getAttribute('action') to ensure we get the URL
+        fetch(this.getAttribute('action'), {
             method: 'POST',
             body: new FormData(this),
             headers: {
@@ -199,38 +377,65 @@
         });
     });
 
-    // Replay Form Submission
     document.getElementById('replay-form').addEventListener('submit', function(event) {
         event.preventDefault();
         const replayButton = this.querySelector('button');
-        replayButton.disabled = true;
+        const replayCountSpan = document.getElementById('replay-count');
+        let currentReplays = parseInt(replayCountSpan.textContent);
+
+        if (currentReplays <= 0) return; // Prevent replay if count is 0
         
-        fetch(this.action, {
+        replayButton.disabled = true;
+
+        // Always handle replay via backend AJAX call (Removed client-side SDK logic)
+        fetch(this.getAttribute('action'), { 
             method: 'POST', 
             body: new FormData(this), 
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
         .then(response => response.json())
         .then(data => {
-            console.log("Replay response:", data);
+            console.log("Backend Replay response:", data);
             if(data.error) {
                 showMessage(data.error, data.status || 'error');
-                replayButton.disabled = false; // Re-enable if error allows more replays
+                replayButton.disabled = data.replays_left !== undefined && data.replays_left <= 0;
             } else {
                 showMessage(data.message || 'Replayed!', 'info');
-                updateUI(data); // Update replay count
-                // Keep button disabled if replays hit 0
-                if (data.replays_left !== undefined && data.replays_left > 0) {
-                     replayButton.disabled = false;
-                }
+                updateUI(data); 
+                // If backend handled SDK playback, it should have played
             }
-             document.getElementById('guess_input').focus(); // Keep focus on guess input
+                document.getElementById('guess_input').focus(); 
+                replayButton.disabled = data.replays_left !== undefined && data.replays_left <= 0;
         })
         .catch(error => {
-            console.error('Error requesting replay:', error);
+            console.error('Error requesting backend replay:', error);
             showMessage('Error communicating with server for replay.', 'error');
-             replayButton.disabled = false; // Re-enable on error
+                replayButton.disabled = false;
         });
+    });
+
+    // --- Initial Page Load Logic --- 
+    document.addEventListener('DOMContentLoaded', () => {
+        // Log User Agent
+        console.log("User Agent:", navigator.userAgent);
+        // Removed mobile detection
+        // Removed debug info update
+
+        // Store initial track info if SDK is used and info is available
+        const initialGameState = {{ game_state | tojson }};
+        if (useSdkPlayer && initialGameState && initialGameState.current_song_details && initialGameState.current_song_details.uri) {
+            // Removed storing info globally 
+            console.log("Initial game state has track info for potential playback.");
+            // Wait for SDK before potentially playing
+            const checkSdkReady = setInterval(() => {
+                if (sdkPlayer && sdkDeviceId) {
+                     clearInterval(checkSdkReady);
+                     console.log("SDK is ready for initial playback.");
+                     // Don't automatically play on load anymore - rely on next round or replay
+                     // playTrack(initialGameState.current_song_details.uri, initialGameState.current_song_start_ms, {{ session.get('playback_duration') | tojson }});
+                }
+            }, 250); // Check every 250ms
+        }
     });
 
 </script>
@@ -240,13 +445,15 @@
     {{ super() }} {# Include the default debug content from base.html #}
     <hr style="border-color: #555;">
     <strong>Game State Debug:</strong><br>
-    Round: {{ game_state.get('round') }}<br>
-    Score: {{ game_state.get('score') }}<br>
-    Lives: {{ game_state.get('lives') }}<br>
-    Played Indices: {{ game_state.get('played_indices') }}<br>
-    Current Song Index: {{ game_state.get('current_song_index') }}<br>
-    Current Song Details: {{ game_state.get('current_song_details') }}<br>
-    Guesses Left: {{ game_state.get('guesses_left') }}<br>
-    Replays Left: {{ game_state.get('replays_left') }}<br>
-    Correct This Round?: {{ game_state.get('correctly_guessed') }}
+    Round: <span id="debug-round">{{ game_state.get('round') }}</span><br>
+    Score: <span id="debug-score">{{ game_state.get('score') }}</span><br>
+    Lives: <span id="debug-lives">{{ game_state.get('lives') }}</span><br>
+    Played Indices: <span id="debug-played">{{ game_state.get('played_indices') }}</span><br>
+    Current Song Index: <span id="debug-song-index">{{ game_state.get('current_song_index') }}</span><br>
+    Current Song Details: <span id="debug-song-details">{{ game_state.get('current_song_details') }}</span><br>
+    Playing URI: <span id="debug-song-uri">{{ game_state.get('current_song_details', {}).get('uri', 'N/A') }}</span><br>
+    Start MS: <span id="debug-song-start-ms">{{ game_state.get('current_song_start_ms', 'N/A') }}</span><br>
+    Guesses Left: <span id="debug-guesses">{{ game_state.get('guesses_left') }}</span><br>
+    Replays Left: <span id="debug-replays">{{ game_state.get('replays_left') }}</span><br>
+    Correct This Round?: <span id="debug-correct">{{ game_state.get('correctly_guessed') }}</span>
 {% endblock %} 
