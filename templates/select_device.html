@@ -19,6 +19,14 @@
         <form method="POST" action="{{ url_for('select_device') }}">
             <p>Choose a device to play music on:</p>
             <ul>
+                {# Add Web Playback option if user has Premium #}
+                {% if is_premium %}
+                     <li>
+                        <input type="radio" name="device_id" value="web_playback_sdk" id="device_web" required>
+                        <label for="device_web">Web (This Page) [Premium Only]</label>
+                    </li>
+                {% endif %}
+                {# List other available devices #}
                 {% for device in devices %}
                     <li>
                         <input type="radio" name="device_id" value="{{ device.id }}" id="device_{{ loop.index }}" required>

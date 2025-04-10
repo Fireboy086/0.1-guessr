@@ -4,8 +4,8 @@
 
 CLIENT_ID = None
 CLIENT_SECRET = None
-REDIRECT_URI = "http://localhost:8888/callback/"
-SCOPE = "user-read-playback-state user-modify-playback-state playlist-read-private user-library-read user-top-read user-read-recently-played"
+REDIRECT_URI = "http://192.168.1.15:8888/callback/"
+SCOPE = "user-read-playback-state user-modify-playback-state playlist-read-private user-library-read user-top-read user-read-recently-played streaming user-read-private user-read-email"
 
 PLAYBACK_DURATION = 0.5  # Initial playback duration in seconds
 WINDOW_TITLE = "Spotify Guessing Game"

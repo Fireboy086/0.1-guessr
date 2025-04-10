@@ -40,7 +40,7 @@
 
     {# --- Admin Debug Panel --- #}
     {% if session.get('is_admin') %}
-    <div style="position: fixed; bottom: 10px; right: 10px; background-color: #333; color: white; padding: 10px; border-radius: 5px; font-size: 0.8em; max-width: 400px; max-height: 300px; overflow: auto; z-index: 1000; border: 1px solid #555;">
+    <div id="admin-debug-panel" style="position: fixed; bottom: 10px; right: 10px; background-color: #333; color: white; padding: 10px; border-radius: 5px; font-size: 0.8em; max-width: 400px; max-height: 300px; overflow: auto; z-index: 1000; border: 1px solid #555;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
             <h4 style="margin: 0; color: #1DB954;">Admin Debug</h4>
             <form method="POST" action="{{ url_for('toggle_debug') }}" style="margin: 0;">
@@ -51,7 +51,7 @@
         </div>
         {% if session.get('debug_enabled') %}
             <hr style="border-color: #555;">
-            <pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0;">
+            <pre id="debug-content-area" style="white-space: pre-wrap; word-wrap: break-word; margin: 0;">
 {# --- Content added by specific templates will go here --- #}
 {% block debug_content %}
 Session Info:
@@ -59,7 +59,7 @@ Device ID: {{ session.get('device_id', 'Not set') }}
 Playlist: {{ session.get('playlist_name', 'Not set') }}
 Tracks Loaded: {{ session.get('track_uris') | length if session.get('track_uris') else 0 }}
 Mode: {{ session.get('game_mode', 'Not set') }}
-Game State: {{ session.get('game_state', 'Not set') | string | truncate(100) }} {# Truncate potentially large state #}
+{# Removed game state from base debug #}
 {% endblock %}
 {# --- End specific debug content --- #}
             </pre>
@@ -69,6 +69,10 @@ Game State: {{ session.get('game_state', 'Not set') | string | truncate(100) }} 
     </div>
     {% endif %}
     {# --- End Admin Debug Panel --- #}
+
+    {# --- JavaScript Block --- #}
+    {% block scripts %}{% endblock %}
+    {# --- End JavaScript Block --- #}
 
 </body>
 </html> 

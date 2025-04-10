@@ -4,6 +4,17 @@ Game Logic - Core gameplay logic for the Spotify Guessing Game
 import re
 import random
 
+def _clean_title(title):
+    """Helper function to clean song titles for guessing."""
+    if not title: return ""
+    # Remove content in parentheses () and brackets []
+    cleaned = re.sub(r'\s*\(.*?\)\s*', '', title)
+    cleaned = re.sub(r'\s*\[.*?\]\s*', '', cleaned)
+    # Remove content after a hyphen - (including the hyphen)
+    cleaned = cleaned.split(' - ')[0]
+    # Remove extra whitespace
+    return cleaned.strip()
+
 def levenshtein_distance(s1, s2):
     """
     Returns the Levenshtein distance between two strings s1 and s2.
@@ -195,36 +206,46 @@ class GameLogic:
         return self.current_track, self.current_track_name, self.current_track_artist
     
     def check_guess(self, guess):
-        """Check if a guess is correct based on the game mode"""
+        """Check if a guess is correct based on the game mode, using cleaned titles."""
         if not self.current_track_name or not self.current_track_artist:
             print(f"Error: Missing track information in GameLogic. Name: {self.current_track_name}, Artist: {self.current_track_artist}")
             return False
             
-        correct_title = self.current_track_name.lower()
-        correct_full = f"{self.current_track_name} by {self.current_track_artist}".lower()
-        guess_lower = guess.lower()
+        # Clean the correct title
+        cleaned_correct_title = _clean_title(self.current_track_name).lower()
+        # Create cleaned full "title by artist"
+        cleaned_correct_full = f"{cleaned_correct_title} by {self.current_track_artist.lower()}" 
+        # Clean the user's guess too?
+        # Maybe not, user might intentionally guess part before hyphen.
+        # Let's compare user's raw guess against cleaned titles.
+        guess_lower = guess.lower().strip()
         
-        # Debug information
-        print(f"Checking guess: '{guess_lower}' against '{correct_title}' or '{correct_full}' in mode: {self.game_mode}")
+        if not cleaned_correct_title: # Handle cases where cleaning might leave nothing
+            print(f"Warning: Cleaned title is empty for '{self.current_track_name}'. Using original.")
+            cleaned_correct_title = self.current_track_name.lower()
+            cleaned_correct_full = f"{cleaned_correct_title} by {self.current_track_artist.lower()}"
+
+        # Debug information with cleaned titles
+        print(f"Checking guess: '{guess_lower}' against cleaned '{cleaned_correct_title}' or '{cleaned_correct_full}' in mode: {self.game_mode}")
         
         if self.game_mode == "Expert":
-            # Exact match on "title by artist"
-            return guess_lower == correct_full
+            # Exact match on cleaned "title by artist"
+            return guess_lower == cleaned_correct_full
         elif self.game_mode == "Harder":
-            # Exact match on title only
-            return guess_lower == correct_title
+            # Exact match on cleaned title only
+            return guess_lower == cleaned_correct_title
         elif self.game_mode == "Hard":
-            # Close match with <= 1 error on title, or exact match on full
-            title_dist = levenshtein_distance(guess_lower, correct_title)
-            result = title_dist <= 1 or guess_lower == correct_full
-            print(f"Hard mode: Title distance {title_dist}, Result: {result}")
+            # Close match (<= 1) on cleaned title, or exact match on cleaned full
+            title_dist = levenshtein_distance(guess_lower, cleaned_correct_title)
+            result = title_dist <= 1 or guess_lower == cleaned_correct_full
+            print(f"Hard mode: Cleaned Title distance {title_dist}, Result: {result}")
             return result
         else:  # Normal mode
-            # Allow <= 2 errors in either "title" or "title by artist"
-            dist_title = levenshtein_distance(guess_lower, correct_title)
-            dist_full = levenshtein_distance(guess_lower, correct_full)
+            # Allow <= 2 errors against cleaned title or cleaned full
+            dist_title = levenshtein_distance(guess_lower, cleaned_correct_title)
+            dist_full = levenshtein_distance(guess_lower, cleaned_correct_full)
             result = dist_title <= 2 or dist_full <= 2
-            print(f"Normal mode: Title distance {dist_title}, Full distance {dist_full}, Result: {result}")
+            print(f"Normal mode: Cleaned Title distance {dist_title}, Cleaned Full distance {dist_full}, Result: {result}")
             return result
     
     def get_game_mode_rules(self, mode):

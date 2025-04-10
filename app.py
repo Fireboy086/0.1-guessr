@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 import os
 from dotenv import load_dotenv
 import spotipy
@@ -33,6 +33,10 @@ CLIENT_ID, CLIENT_SECRET, REDIRECT_URI = load_spotify_credentials()
 if not CLIENT_ID or not CLIENT_SECRET or not REDIRECT_URI:
     # Adjust error message to reflect loading from .ini
     raise ValueError("Spotify API credentials (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI) could not be loaded from credentials.ini. Please ensure the file exists and is correctly formatted.")
+
+# --- !! ADDED SCOPE DEBUG PRINT !! ---
+print(f"DEBUG: Imported SCOPE = \"{SCOPE}\"")
+# --- !! END ADDED SCOPE DEBUG PRINT !! ---
 
 # --- Spotify Auth Helper ---
 
@@ -104,24 +108,55 @@ def callback():
         
     try:
         token_info = sp_oauth.get_access_token(code)
+        # --- !! ADDED SCOPE DEBUG PRINT !! ---
+        print(f"DEBUG: /callback - Token Info Scopes: {token_info.get('scope')}")
+        # --- !! END ADDED SCOPE DEBUG PRINT !! ---
         session[TOKEN_INFO_KEY] = token_info
         
         # --- Check for Admin --- 
         session['is_admin'] = False # Default to False
         try:
             sp = spotipy.Spotify(auth=token_info['access_token'])
-            current_user = sp.current_user()
-            user_id = current_user['id']
-            session['user_id'] = user_id # Store user ID regardless
-            # Check against configured Admin ID
-            if user_id == ADMIN_USER_ID:
-                session['is_admin'] = True
-                print(f"Admin user {user_id} logged in.") # Log admin login
+            current_user_profile = sp.me() 
+            # --- !! REMOVING FULL DEBUG PRINT !! ---
+            # print(f"DEBUG: Full sp.me() response:\n{current_user_profile}") 
+            # --- !! END REMOVED DEBUG PRINT !! ---
+            
+            user_id = None
+            user_product = 'unknown'
+            
+            # Safely try to access fields
+            if current_user_profile and isinstance(current_user_profile, dict):
+                user_id = current_user_profile.get('id')
+                user_product = current_user_profile.get('product', 'unknown') # Now this should work
             else:
+                 print("ERROR: sp.me() did not return a valid dictionary.")
+
+            session['user_id'] = user_id # Store user ID (or None)
+            
+            # Debug: Print values for admin check
+            # print(f"DEBUG: Checking Admin - Fetched User ID: {user_id}, Config Admin ID: {ADMIN_USER_ID}") # Removing extra admin debug
+            
+            # Store premium status
+            session['is_premium'] = user_product == 'premium'
+            print(f"DEBUG: Callback check - User product: {user_product}, is_premium session value: {session['is_premium']}") # Keep this one for now
+            
+            # Check against configured Admin ID (only if user_id was found)
+            if user_id and user_id == ADMIN_USER_ID:
+                session['is_admin'] = True
+                print(f"Admin user {user_id} logged in.") 
+            elif user_id:
                  print(f"Regular user {user_id} logged in.")
+            else:
+                 print("Could not determine user ID for admin check.")
+                 
         except Exception as e:
-            print(f"Error fetching user ID for admin check: {e}")
+            print(f"CRITICAL Error fetching user profile details: {e}")
+            import traceback
+            traceback.print_exc() 
             session['user_id'] = None
+            session['is_premium'] = False
+            session['is_admin'] = False
         # --- End Admin Check ---
 
         # Redirect to index
@@ -154,23 +189,33 @@ def select_device():
         if request.method == 'POST':
             device_id = request.form.get('device_id')
             if device_id:
-                # Verify the selected device_id is valid (optional but good practice)
-                available_devices = spotify_manager.get_available_devices()
-                if any(d['id'] == device_id for d in available_devices):
-                    session['device_id'] = device_id
-                    # Redirect to the next step (playlist selection)
-                    return redirect(url_for('select_playlist')) # Adjust if route name is different
+                # Handle SDK selection
+                if device_id == "web_playback_sdk":
+                    if session.get('is_premium', False):
+                        session['device_id'] = device_id
+                        print("Web Playback SDK selected as device.")
+                        return redirect(url_for('select_playlist'))
+                    else:
+                        flash("Web playback requires a Spotify Premium account.", "error")
+                        # Fall through to GET
                 else:
-                    flash("Invalid device selected. Please try again.")
-                    # Fall through to GET to re-render the device list
+                    # Verify the selected physical device_id (as before)
+                    available_devices = spotify_manager.get_available_devices()
+                    if any(d['id'] == device_id for d in available_devices):
+                        session['device_id'] = device_id
+                        return redirect(url_for('select_playlist')) 
+                    else:
+                        flash("Invalid device selected. Please try again.", "error")
+                        # Fall through to GET
             else:
-                flash("Please select a device.")
-                # Fall through to GET to re-render the device list
+                flash("Please select a device.", "error")
+                # Fall through to GET
 
-        # GET request: Fetch and display devices
+        # GET request: Fetch and display devices (fetch is done below now)
         devices = spotify_manager.get_available_devices()
-        # Note: get_available_devices already returns a list of dicts with 'id', 'name', 'type'
-        return render_template('select_device.html', devices=devices)
+        is_premium = session.get('is_premium', False) 
+        # print(f"DEBUG: /select-device route - is_premium value read from session: {is_premium}") # Removing this debug
+        return render_template('select_device.html', devices=devices, is_premium=is_premium)
 
     except spotipy.exceptions.SpotifyException as e:
         # Handle potential API errors (e.g., token expired, network issue)
@@ -321,7 +366,14 @@ def select_mode():
 def play_game():
     token_info = get_token_info()
     if not token_info:
+        # For AJAX requests, return error status
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify(error="Not authenticated"), 401
         return redirect(url_for('index'))
+
+    # --- !! ADDED SCOPE DEBUG PRINT !! ---
+    print(f"DEBUG: /play_game - Token Info Scopes (before passing to template): {token_info.get('scope')}")
+    # --- !! END ADDED SCOPE DEBUG PRINT !! ---
 
     # Check if all necessary setup info is in session
     required_setup = ['device_id', 'track_uris', 'track_names', 'track_artists', 
@@ -353,6 +405,7 @@ def play_game():
 
     # Load or initialize game state from session
     game_state = session.get('game_state', None)
+    is_new_game_or_round = False
     if game_state is None:
         # Start a new game
         game_state = {
@@ -366,17 +419,77 @@ def play_game():
             'replays_left': 5, # Fixed replay limit
             'correctly_guessed': False
         }
+        is_new_game_or_round = True # Mark to play song later in GET
         session['game_state'] = game_state
         print("--- New Game Started ---")
-        # Proceed to pick and play the first song (handled below)
     
     # --- Handle POST requests (Guessing, Replaying) --- 
     if request.method == 'POST':
         action = request.form.get('action')
-        
+        # Make sure we have a game state
+        if not game_state:
+             return jsonify(error="Game state not found"), 400
+
         if action == 'guess':
-            # Handle guess logic (will add in next step)
-            pass # Placeholder
+            guess = request.form.get('guess', '').strip()
+            if not guess:
+                return jsonify(error="Please enter a guess.", status='warning'), 400
+            if not game_state['current_song_details']:
+                 return jsonify(error="No song playing.", status='error'), 400
+            if game_state['guesses_left'] <= 0:
+                return jsonify(error="No guesses left for this round.", status='error'), 400
+
+            # Prepare GameLogic instance for checking the guess
+            # We need to set the current track details and game mode
+            game_logic.current_track_name = game_state['current_song_details']['name']
+            game_logic.current_track_artist = game_state['current_song_details']['artist']
+            game_logic.game_mode = game_mode # Set the guessing difficulty
+            
+            print(f"Checking guess: '{guess}' for song: '{game_logic.current_track_name}' by '{game_logic.current_track_artist}' in mode '{game_mode}'")
+
+            is_correct = game_logic.check_guess(guess)
+
+            response_data = {}
+            status_code = 200
+
+            if is_correct:
+                points_earned = game_state['guesses_left'] # Or some other scoring logic
+                game_state['score'] += points_earned
+                game_state['correctly_guessed'] = True
+                response_data = {
+                    'result': 'correct',
+                    'message': f"✅ Correct! The song was: {game_logic.current_track_name} by {game_logic.current_track_artist}. +{points_earned} points!",
+                    'score': game_state['score'],
+                    'lives': game_state['lives'] # Include current lives
+                }
+                # DO NOT save game_state here yet, next round needs to start
+            else:
+                game_state['guesses_left'] -= 1
+                if game_state['guesses_left'] <= 0:
+                    # Out of guesses for this song
+                    game_state['lives'] -= 1
+                    game_state['correctly_guessed'] = True # Mark to move to next round
+                    response_data = {
+                        'result': 'incorrect_final',
+                        'message': f"❌ Out of guesses! The song was: {game_logic.current_track_name} by {game_logic.current_track_artist}. Lives left: {game_state['lives']}",
+                        'score': game_state['score'],
+                        'lives': game_state['lives']
+                    }
+                    if game_state['lives'] <= 0:
+                         response_data['game_over'] = True
+                         response_data['message'] += " Game Over!"
+                else:
+                    # Incorrect, but guesses remain
+                    response_data = {
+                        'result': 'incorrect',
+                        'message': f"❌ Incorrect, try again!",
+                        'guesses_left': game_state['guesses_left']
+                    }
+            
+            # Save updated state *after* determining response
+            session['game_state'] = game_state
+            return jsonify(response_data), status_code
+
         elif action == 'replay':
             # Handle replay logic
             if game_state['replays_left'] > 0 and game_state['current_song_details']:
@@ -396,45 +509,50 @@ def play_game():
                 try:
                     print(f"Replaying track: {current_track_uri} on device: {device_id} from {original_start_ms}ms")
                     spotify_manager.play_track_snippet(current_track_uri, device_id, playback_duration, original_start_ms)
-                    flash("Song replayed!", "info")
+                    return jsonify(result='replayed', replays_left=game_state['replays_left'], message='Song replayed!'), 200
                 except Exception as e:
-                    print(f"Error replaying track: {e}")
-                    flash(f"Error replaying song: {e}", "error")
-                    # Maybe redirect to device select or index if playback fails?
+                    return jsonify(error=f"Error replaying song: {e}", status='error'), 500
             else:
-                flash("No more replays left or no song playing.", "warning")
-                
-            # Re-render the same page after replay attempt
-            return render_template('play_game.html', game_state=game_state)
+                return jsonify(error="No more replays left or no song playing.", status='warning'), 400
         
-        # If POST wasn't handled, fall through to GET logic
+        # Fallback for unknown POST action
+        return jsonify(error="Unknown action"), 400
 
-    # --- Handle GET request or continuing after POST (if not redirected) --- 
+    # --- Handle GET request --- 
+    # (Or proceeding after a correct/final guess via JS trigger)
 
-    # Check if game is over
-    if game_state['lives'] <= 0:
-        # Redirect to game over page (create later)
-        # return redirect(url_for('game_over'))
-        flash("Game Over! Out of lives.", "error") # Placeholder
-        return redirect(url_for('index')) # Go back to index for now
-    
-    # Check if we need to start a new round 
-    # (e.g., first load, or previous round was guessed correctly)
-    if game_state['current_song_index'] == -1 or game_state['correctly_guessed']: 
-        print(f"--- Starting Round {game_state['round']} ---")
+    # Check if game is over (before starting next round)
+    if game_state and game_state['lives'] <= 0:
+        # Handle game over - maybe clear state and redirect?
+        # For AJAX: return jsonify({'game_over': True, 'score': game_state['score']})
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+             return jsonify(game_over=True, final_score=game_state.get('score', 0))
+        else:
+             flash(f"Game Over! Final Score: {game_state.get('score', 0)}", "info")
+             session.pop('game_state', None) # Clear state on game over
+             return redirect(url_for('index'))
+
+    # Check if we need to start a new round (or first round)
+    # 'correctly_guessed' is now set when round ends (correctly or out of guesses)
+    if is_new_game_or_round or (game_state and game_state['correctly_guessed']): 
+        print(f"--- Starting Round Logic (Round {game_state['round']}) ---")
         # Pick a new song that hasn't been played
         available_indices = [i for i in range(len(track_uris)) if i not in game_state['played_indices']]
         
         if not available_indices:
-            # All songs played! Game Won/Over?
-            # return redirect(url_for('game_over', status='won'))
-            flash("Wow! You guessed all the songs!", "success") # Placeholder
-            return redirect(url_for('index')) # Go back to index for now
-
-        # Select a random index from available ones
+            # Handle game won/finished
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                 return jsonify(game_over=True, status='won', final_score=game_state.get('score', 0))
+            else:
+                 flash(f"Wow! You guessed all songs! Final Score: {game_state.get('score', 0)}", "success")
+                 session.pop('game_state', None)
+                 return redirect(url_for('index'))
+        
         current_song_index = random.choice(available_indices)
         
-        # Update game state for the new round
+        # Update game state for new round (as before)
+        # Reset correctly_guessed flag *here*
+        game_state['correctly_guessed'] = False 
         game_state['current_song_index'] = current_song_index
         game_state['played_indices'].append(current_song_index)
         game_state['current_song_details'] = {
@@ -444,9 +562,8 @@ def play_game():
         }
         game_state['guesses_left'] = MAX_GUESS_COUNT
         game_state['replays_left'] = 5 # Reset replays for new song
-        game_state['correctly_guessed'] = False # Reset guess status
-        # Increment round number *only if* it's not the very first round setup
-        if game_state['current_song_index'] != -1: 
+        # Increment round *after* the first song is processed
+        if not is_new_game_or_round:
              game_state['round'] += 1
 
         # Determine start position for playback
@@ -474,28 +591,66 @@ def play_game():
         
         game_state['current_song_start_ms'] = start_position_ms # Store the start time for replays
 
-        # Play the snippet
-        try:
-            print(f"Playing track: {game_state['current_song_details']['uri']} on device: {device_id} from {start_position_ms}ms")
-            spotify_manager.play_track_snippet(
-                game_state['current_song_details']['uri'], 
-                device_id, 
-                playback_duration, 
-                start_position_ms
-            )
-        except Exception as e:
-             print(f"Error playing track snippet: {e}")
-             flash(f"Error playing song: {e}. Please ensure the device is active.", "error")
-             # Consider redirecting if playback fails critically
-             # return redirect(url_for('select_device'))
+        # Play the snippet *only if not using the SDK*
+        if session.get('device_id') != 'web_playback_sdk':
+            try:
+                print(f"Playing track via Spotify Manager: {game_state['current_song_details']['uri']} on device: {device_id} from {start_position_ms}ms")
+                spotify_manager.play_track_snippet(
+                    game_state['current_song_details']['uri'], 
+                    device_id, 
+                    playback_duration, 
+                    start_position_ms
+                )
+            except Exception as e:
+                 print(f"Error playing track snippet via SpotifyManager: {e}")
+                 # Handle error - maybe return JSON error for AJAX?
+                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                     return jsonify(error=f"Error playing song: {e}"), 500
+                 else:
+                     flash(f"Error playing song: {e}. Please ensure the device is active.", "error")
+                     # Maybe redirect? return redirect(url_for('select_device'))
+        else:
+            # If SDK is selected, JS will handle playback after getting the track info
+            print("SDK playback selected. Skipping backend playback initiation.")
         
-        # Save the updated game state
         session['game_state'] = game_state
-        print(f"State after starting round: {game_state}") # Debug log
+        print(f"State after starting round: {game_state}") 
 
-    # Render the game page with the current state
-    # Make sure game_state is up-to-date before rendering
-    return render_template('play_game.html', game_state=session.get('game_state'))
+    # Determine if SDK player should be used
+    use_sdk_player = session.get('device_id') == 'web_playback_sdk'
+
+    # If AJAX request (likely for /next_round trigger), return game state
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        # Return necessary state for UI update + SDK playback trigger
+        state_for_js = {
+            'round': game_state['round'],
+            'score': game_state['score'],
+            'lives': game_state['lives'],
+            'guesses_left': game_state['guesses_left'],
+            'replays_left': game_state['replays_left'],
+            'use_sdk_player': use_sdk_player # Flag for JS
+        }
+        # Include song details if SDK needs to play it
+        if use_sdk_player and game_state.get('current_song_details'):
+             state_for_js['current_song_uri'] = game_state['current_song_details'].get('uri')
+             state_for_js['current_song_start_ms'] = game_state.get('current_song_start_ms')
+             # Also send duration needed for JS pause timer
+             state_for_js['playback_duration_s'] = session.get('playback_duration') 
+
+        # Include details needed only for debug panel update (if enabled)
+        if session.get('debug_enabled') and game_state.get('current_song_details'):
+            state_for_js['current_song_name'] = game_state['current_song_details'].get('name', 'N/A')
+            state_for_js['current_song_artist'] = game_state['current_song_details'].get('artist', 'N/A')
+            if not use_sdk_player: # Add URI/start only if not already added for SDK
+                state_for_js['current_song_uri'] = game_state['current_song_details'].get('uri', 'N/A')
+                state_for_js['current_song_start_ms'] = game_state.get('current_song_start_ms', 'N/A')
+        
+        return jsonify(state_for_js)
+
+    # If regular GET request, render the full page template
+    # Pass access token needed for SDK initialization
+    access_token = token_info['access_token'] if token_info else None
+    return render_template('play_game.html', game_state=session.get('game_state'), access_token=access_token, use_sdk_player=use_sdk_player)
 
 # --- Admin Routes ---
 
@@ -515,4 +670,5 @@ def toggle_debug():
 if __name__ == '__main__':
     # Ensure port matches SPOTIPY_REDIRECT_URI in .env and Spotify Dashboard
     port = int(os.environ.get("PORT", 8888)) 
-    app.run(debug=True, port=port) 
+    # Listen on all interfaces to be accessible on the local network
+    app.run(host='0.0.0.0', debug=True, port=port) 

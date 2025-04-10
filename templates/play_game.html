@@ -68,10 +68,11 @@
             sdkPlayer = new Spotify.Player({
                 name: 'Spotify Guessr Game',
                 getOAuthToken: cb => { 
+                    // Log the token being passed to the SDK instance
                     console.log("SDK getOAuthToken providing token:", accessToken); 
                     cb(accessToken); 
                 },
-                volume: 0.4 // Lower initial volume (0.0 to 1.0)
+                volume: 0.2 // Set initial volume lower (0 to 1)
             });
 
             // Error handling
@@ -97,11 +98,8 @@
             sdkPlayer.addListener('ready', ({ device_id }) => {
                 console.log('SDK Player Ready with Device ID:', device_id);
                 sdkDeviceId = device_id;
-                // Explicitly set volume after ready
-                sdkPlayer.setVolume(0.2).then(() => {
-                    console.log('Volume set to 20%');
-                }).catch(err => console.error('Error setting volume:', err));
                 // Optional: Register device ID with backend here if needed elsewhere
+                // fetch('/register-sdk-device', { method: 'POST', body: JSON.stringify({device_id}), headers:{'Content-Type': 'application/json'} });
             });
 
             // Player not ready
@@ -236,12 +234,10 @@
     // --- Playback Function (SDK or relies on Backend) --- 
     let currentPauseTimer = null; // Keep track of JS pause timer
     function playTrack(trackUri, startMs, durationS) {
-        // --- !! ADDED PARAMETER LOGGING !! ---
-        console.log(`Attempting playTrack: URI=${trackUri}, Start=${startMs}ms, Duration=${durationS}s, SDKDevice=${sdkDeviceId}, HasToken=${!!accessToken}`);
-        // --- !! END ADDED LOGGING !! ---
-        
-        if (useSdkPlayer && sdkPlayer && sdkDeviceId && accessToken) { // Add accessToken check here too
-            console.log(`SDK Playing via fetch: ${trackUri} from ${startMs}ms for ${durationS}s on ${sdkDeviceId}`);
+        if (useSdkPlayer && sdkPlayer && sdkDeviceId) {
+            console.log(`SDK Playing: ${trackUri} from ${startMs}ms for ${durationS}s on ${sdkDeviceId}`);
+            // Use Fetch API to control playback via REST API
+            // (SDK player object itself has limited controls for starting at position)
             fetch(`https://api.spotify.com/v1/me/player/play?device_id=${sdkDeviceId}`, {
                 method: 'PUT',
                 body: JSON.stringify({ uris: [trackUri], position_ms: startMs }),
@@ -251,16 +247,14 @@
                 },
             })
             .then(response => {
-                // --- !! ADDED RESPONSE LOGGING !! ---
-                console.log(`Spotify API Play Response Status: ${response.status} ${response.statusText}`);
-                // --- !! END ADDED LOGGING !! ---
                 if (!response.ok) {
-                    console.error('Spotify API Play Error Details:', response);
-                     response.json().then(err => showMessage(`Error starting web playback: ${err.error?.message || response.statusText}`, 'error')).catch(() => showMessage(`Error starting web playback: ${response.statusText}`, 'error'));
+                    console.error('Spotify API Play Error:', response.status, response.statusText);
+                     // Try to read error message from Spotify if available
+                    response.json().then(err => showMessage(`Error starting web playback: ${err.error?.message || response.statusText}`, 'error'));
                 } else {
                     console.log("SDK Play command sent ok.");
                     // Schedule pause using JS setTimeout
-                    clearTimeout(currentPauseTimer); 
+                    clearTimeout(currentPauseTimer); // Clear previous timer
                     currentPauseTimer = setTimeout(() => {
                         if (sdkPlayer) {
                             sdkPlayer.pause().then(() => {
@@ -275,10 +269,13 @@
                 showMessage('Error sending play command to Spotify.', 'error');
             });
         } else if (!useSdkPlayer) {
+            // If not using SDK, backend should have already started playback.
+            // No action needed here.
             console.log("Relying on backend for playback.");
         } else {
-            showMessage("Web player not ready or token missing. Cannot play track.", 'error');
-            console.error("Attempted to play via SDK, but player/device ID/token not ready.", {sdkPlayer, sdkDeviceId, accessToken});
+            // SDK selected but not ready?
+            showMessage("Web player not ready. Cannot play track.", 'error');
+            console.error("Attempted to play via SDK, but player/device ID not ready.");
         }
     }
 
@@ -304,9 +301,10 @@
                 updateDebugPanel(data);
                 // If SDK is used, trigger playback now
                 if (data.use_sdk_player && data.current_song_uri) {
-                    // Removed storing info for replay
-                    // Removed mobile check and button logic
-                    // Directly play track if SDK is used
+                    // Store info for replay
+                    window.currentTrackUriForReplay = data.current_song_uri;
+                    window.currentStartMsForReplay = data.current_song_start_ms;
+                    window.currentPlaybackDurationS = data.playback_duration_s;
                     playTrack(data.current_song_uri, data.current_song_start_ms, data.playback_duration_s);
                 }
                 // Re-enable form
@@ -387,52 +385,79 @@
         
         replayButton.disabled = true;
 
-        // Always handle replay via backend AJAX call (Removed client-side SDK logic)
-        fetch(this.getAttribute('action'), { 
-            method: 'POST', 
-            body: new FormData(this), 
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        })
-        .then(response => response.json())
-        .then(data => {
-            console.log("Backend Replay response:", data);
-            if(data.error) {
-                showMessage(data.error, data.status || 'error');
-                replayButton.disabled = data.replays_left !== undefined && data.replays_left <= 0;
-            } else {
-                showMessage(data.message || 'Replayed!', 'info');
-                updateUI(data); 
-                // If backend handled SDK playback, it should have played
-            }
-                document.getElementById('guess_input').focus(); 
-                replayButton.disabled = data.replays_left !== undefined && data.replays_left <= 0;
-        })
-        .catch(error => {
-            console.error('Error requesting backend replay:', error);
-            showMessage('Error communicating with server for replay.', 'error');
-                replayButton.disabled = false;
-        });
+        if (useSdkPlayer && sdkPlayer && sdkDeviceId) {
+            // Handle replay client-side using SDK
+             console.log("Handling replay via SDK");
+             // Get current track info from debug panel or store globally? Needs refactor maybe.
+             // Simplest: Assume backend state still holds current song info
+             // We need URI and Start MS. Let's request it from backend?
+             // OR, store it in JS variable when round starts.
+             // Let's try storing it (simplifies this part)
+             if (window.currentTrackUriForReplay && window.currentStartMsForReplay !== undefined) {
+                 currentReplays--;
+                 replayCountSpan.textContent = currentReplays;
+                 if (currentReplays <= 0) replayButton.disabled = true;
+                 else replayButton.disabled = false; // Re-enable temporarily
+
+                 playTrack(window.currentTrackUriForReplay, window.currentStartMsForReplay, window.currentPlaybackDurationS);
+                 // Re-enable button after a short delay maybe?
+                 setTimeout(() => { if(currentReplays > 0) replayButton.disabled = false; }, 500);
+                 showMessage('Song replayed!', 'info');
+             } else {
+                 showMessage("Cannot replay: track info missing.", "error");
+                 replayButton.disabled = false;
+             }
+        } else {
+             // Handle replay via backend AJAX call (as before)
+            fetch(this.getAttribute('action'), { 
+                method: 'POST', 
+                body: new FormData(this), 
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log("Backend Replay response:", data);
+                if(data.error) {
+                    showMessage(data.error, data.status || 'error');
+                    replayButton.disabled = data.replays_left !== undefined && data.replays_left <= 0;
+                } else {
+                    showMessage(data.message || 'Replayed!', 'info');
+                    updateUI(data); 
+                }
+                 document.getElementById('guess_input').focus(); 
+                 replayButton.disabled = data.replays_left !== undefined && data.replays_left <= 0;
+            })
+            .catch(error => {
+                console.error('Error requesting backend replay:', error);
+                showMessage('Error communicating with server for replay.', 'error');
+                 replayButton.disabled = false;
+            });
+        }
     });
+
+    // Store current track info globally for SDK replay (needs refinement maybe)
+    window.currentTrackUriForReplay = null;
+    window.currentStartMsForReplay = null;
+    window.currentPlaybackDurationS = null;
+    // Modify startNextRound to store these
+    // (Need to edit previous code block - add inside startNextRound .then block)
 
     // --- Initial Page Load Logic --- 
     document.addEventListener('DOMContentLoaded', () => {
-        // Log User Agent
-        console.log("User Agent:", navigator.userAgent);
-        // Removed mobile detection
-        // Removed debug info update
-
         // Store initial track info if SDK is used and info is available
         const initialGameState = {{ game_state | tojson }};
         if (useSdkPlayer && initialGameState && initialGameState.current_song_details && initialGameState.current_song_details.uri) {
-            // Removed storing info globally 
-            console.log("Initial game state has track info for potential playback.");
-            // Wait for SDK before potentially playing
+            window.currentTrackUriForReplay = initialGameState.current_song_details.uri;
+            window.currentStartMsForReplay = initialGameState.current_song_start_ms;
+            window.currentPlaybackDurationS = {{ session.get('playback_duration') | tojson }};
+            console.log("Initial track info stored for SDK replay:", window.currentTrackUriForReplay, window.currentStartMsForReplay);
+            
+            // Trigger initial playback once SDK is ready
             const checkSdkReady = setInterval(() => {
                 if (sdkPlayer && sdkDeviceId) {
                      clearInterval(checkSdkReady);
-                     console.log("SDK is ready for initial playback.");
-                     // Don't automatically play on load anymore - rely on next round or replay
-                     // playTrack(initialGameState.current_song_details.uri, initialGameState.current_song_start_ms, {{ session.get('playback_duration') | tojson }});
+                     console.log("SDK is ready, triggering initial playback.");
+                     playTrack(window.currentTrackUriForReplay, window.currentStartMsForReplay, window.currentPlaybackDurationS);
                 }
             }, 250); // Check every 250ms
         }
