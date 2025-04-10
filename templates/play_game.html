@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Play Game - Spotify Guessr{% endblock %}
+
+{% block content %}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1em;">
+        <h2>Round {{ game_state.get('round', 1) }}</h2>
+        <div>
+            <span>Score: <strong>{{ game_state.get('score', 0) }}</strong></span> | 
+            <span>Lives: <strong style="color: {{ 'red' if game_state.get('lives', 3) <= 1 else 'inherit' }};">{{ game_state.get('lives', 3) }}</strong></span>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class=flashes style="margin-bottom: 1em;">
+        {% for category, message in messages %}
+          <div class="flash {{ category }}" style="padding: 8px; border-radius: 4px; background-color: {{ '#ffdddd' if category == 'error' else ('#ddffdd' if category == 'success' else '#eeeeee') }}; border: 1px solid {{ '#ffaaaa' if category == 'error' else ('#aaffaa' if category == 'success' else '#cccccc') }}; color: #333;">
+              {{ message }}
+          </div>
+        {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <p>Listen to the clip and make your guess!</p>
+
+    {# Guess Form #}
+    <form method="POST" action="{{ url_for('play_game') }}" style="margin-bottom: 1em;">
+        <input type="hidden" name="action" value="guess"> {# Identify the action #}
+        <label for="guess_input">Your Guess:</label><br>
+        <input type="text" name="guess" id="guess_input" size="40" required autocomplete="off">
+        <button type="submit" class="button">Submit Guess ({{ game_state.get('guesses_left', 3) }} left)</button>
+    </form>
+
+    {# Replay Form #}
+    <form method="POST" action="{{ url_for('play_game') }}" style="display: inline-block;">
+         <input type="hidden" name="action" value="replay"> {# Identify the action #}
+        <button type="submit" class="button" style="background-color: #555;" {{ 'disabled' if game_state.get('replays_left', 5) <= 0 }}>
+            Replay Clip ({{ game_state.get('replays_left', 5) }} left)
+        </button>
+    </form>
+
+    {# Forfeit Button (Optional) #}
+    {# <form method="POST" action="{{ url_for('play_game') }}" style="display: inline-block;">
+         <input type="hidden" name="action" value="forfeit">
+         <button type="submit" class="button" style="background-color: #cc0000;">Give Up This Song</button>
+    </form> #}
+
+    <p style="margin-top: 2em;"><a href="{{ url_for('index') }}">Quit Game</a></p>
+
+{% endblock %}
+
+{% block debug_content %}
+    {{ super() }} {# Include the default debug content from base.html #}
+    <hr style="border-color: #555;">
+    <strong>Game State Debug:</strong><br>
+    Round: {{ game_state.get('round') }}<br>
+    Score: {{ game_state.get('score') }}<br>
+    Lives: {{ game_state.get('lives') }}<br>
+    Played Indices: {{ game_state.get('played_indices') }}<br>
+    Current Song Index: {{ game_state.get('current_song_index') }}<br>
+    Current Song Details: {{ game_state.get('current_song_details') }}<br>
+    Guesses Left: {{ game_state.get('guesses_left') }}<br>
+    Replays Left: {{ game_state.get('replays_left') }}<br>
+    Correct This Round?: {{ game_state.get('correctly_guessed') }}
+{% endblock %} 

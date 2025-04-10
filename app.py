@@ -4,8 +4,9 @@ from dotenv import load_dotenv
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import time
-# Import scope and admin ID from config
-from config import SCOPE, ADMIN_USER_ID
+import random # Import random
+# Import scope, admin ID, constants from config
+from config import SCOPE, ADMIN_USER_ID, MAX_LIVES, MAX_GUESS_COUNT 
 # Import credential loading function
 from spotify_guessr import load_spotify_credentials
 # Import SpotifyManager
@@ -313,6 +314,188 @@ def select_mode():
 
     # GET request: show the form
     return render_template('select_mode.html')
+
+# --- Game Play Route ---
+
+@app.route('/play_game', methods=['GET', 'POST'])
+def play_game():
+    token_info = get_token_info()
+    if not token_info:
+        return redirect(url_for('index'))
+
+    # Check if all necessary setup info is in session
+    required_setup = ['device_id', 'track_uris', 'track_names', 'track_artists', 
+                        'game_mode', 'playback_duration', 'playback_start']
+    if not all(key in session for key in required_setup):
+        flash("Game setup incomplete. Please start from the beginning.", "error")
+        # Redirect to the first step of setup
+        return redirect(url_for('select_device')) 
+
+    # Initialize managers
+    try:
+        sp = spotipy.Spotify(auth=token_info['access_token'])
+        spotify_manager = SpotifyManager(sp)
+        # Use base GameLogic, set mode from session later if needed for check_guess
+        game_logic = GameLogic(sp) 
+    except Exception as e:
+        print(f"Error initializing Spotify objects in play_game: {e}")
+        flash("Error connecting to Spotify. Please log out and back in.", "error")
+        return redirect(url_for('logout'))
+
+    # Retrieve game settings from session
+    track_uris = session['track_uris']
+    track_names = session['track_names']
+    track_artists = session['track_artists']
+    device_id = session['device_id']
+    playback_duration = session['playback_duration'] # Already float
+    playback_start_mode = session['playback_start'] # 'start' or 'random'
+    game_mode = session['game_mode'] # Guessing difficulty
+
+    # Load or initialize game state from session
+    game_state = session.get('game_state', None)
+    if game_state is None:
+        # Start a new game
+        game_state = {
+            'score': 0,
+            'lives': MAX_LIVES,
+            'round': 1,
+            'played_indices': [], # Keep track of indices played
+            'current_song_index': -1, # Index of the current song in the main lists
+            'current_song_details': None, # Dict with {uri, name, artist}
+            'guesses_left': MAX_GUESS_COUNT,
+            'replays_left': 5, # Fixed replay limit
+            'correctly_guessed': False
+        }
+        session['game_state'] = game_state
+        print("--- New Game Started ---")
+        # Proceed to pick and play the first song (handled below)
+    
+    # --- Handle POST requests (Guessing, Replaying) --- 
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        if action == 'guess':
+            # Handle guess logic (will add in next step)
+            pass # Placeholder
+        elif action == 'replay':
+            # Handle replay logic
+            if game_state['replays_left'] > 0 and game_state['current_song_details']:
+                game_state['replays_left'] -= 1
+                session['game_state'] = game_state # Save state change
+                
+                # Replay the current song
+                current_track_uri = game_state['current_song_details']['uri']
+                start_position_ms = 0 # Default to start for replay
+                # If random mode was chosen, maybe replay from a *different* random spot?
+                # For simplicity now, replay always starts from 0 or the original random spot?
+                # Let's just replay the exact snippet for now.
+                
+                # Need to get the original start position if it was random
+                original_start_ms = game_state.get('current_song_start_ms', 0)
+                
+                try:
+                    print(f"Replaying track: {current_track_uri} on device: {device_id} from {original_start_ms}ms")
+                    spotify_manager.play_track_snippet(current_track_uri, device_id, playback_duration, original_start_ms)
+                    flash("Song replayed!", "info")
+                except Exception as e:
+                    print(f"Error replaying track: {e}")
+                    flash(f"Error replaying song: {e}", "error")
+                    # Maybe redirect to device select or index if playback fails?
+            else:
+                flash("No more replays left or no song playing.", "warning")
+                
+            # Re-render the same page after replay attempt
+            return render_template('play_game.html', game_state=game_state)
+        
+        # If POST wasn't handled, fall through to GET logic
+
+    # --- Handle GET request or continuing after POST (if not redirected) --- 
+
+    # Check if game is over
+    if game_state['lives'] <= 0:
+        # Redirect to game over page (create later)
+        # return redirect(url_for('game_over'))
+        flash("Game Over! Out of lives.", "error") # Placeholder
+        return redirect(url_for('index')) # Go back to index for now
+    
+    # Check if we need to start a new round 
+    # (e.g., first load, or previous round was guessed correctly)
+    if game_state['current_song_index'] == -1 or game_state['correctly_guessed']: 
+        print(f"--- Starting Round {game_state['round']} ---")
+        # Pick a new song that hasn't been played
+        available_indices = [i for i in range(len(track_uris)) if i not in game_state['played_indices']]
+        
+        if not available_indices:
+            # All songs played! Game Won/Over?
+            # return redirect(url_for('game_over', status='won'))
+            flash("Wow! You guessed all the songs!", "success") # Placeholder
+            return redirect(url_for('index')) # Go back to index for now
+
+        # Select a random index from available ones
+        current_song_index = random.choice(available_indices)
+        
+        # Update game state for the new round
+        game_state['current_song_index'] = current_song_index
+        game_state['played_indices'].append(current_song_index)
+        game_state['current_song_details'] = {
+            'uri': track_uris[current_song_index],
+            'name': track_names[current_song_index],
+            'artist': track_artists[current_song_index]
+        }
+        game_state['guesses_left'] = MAX_GUESS_COUNT
+        game_state['replays_left'] = 5 # Reset replays for new song
+        game_state['correctly_guessed'] = False # Reset guess status
+        # Increment round number *only if* it's not the very first round setup
+        if game_state['current_song_index'] != -1: 
+             game_state['round'] += 1
+
+        # Determine start position for playback
+        start_position_ms = 0
+        if playback_start_mode == 'random':
+            try:
+                # Get track duration to calculate a random start point
+                # Make sure track_uri is valid
+                track_info = sp.track(game_state['current_song_details']['uri'])
+                duration_ms = track_info['duration_ms']
+                # Play somewhere in the first 80%? Avoid starting too close to the end.
+                # Ensure duration_ms is greater than playback_duration in ms
+                playback_duration_ms = int(playback_duration * 1000)
+                if duration_ms > playback_duration_ms + 1000: # Add buffer
+                     max_start = int(duration_ms * 0.8) # Don't start too late
+                     if max_start > playback_duration_ms:
+                         start_position_ms = random.randint(0, max_start - playback_duration_ms)
+                     else:
+                         start_position_ms = 0 # Fallback if song is very short
+                else:
+                    start_position_ms = 0 # Fallback if song is too short
+            except Exception as e:
+                print(f"Error getting track duration for random start: {e}")
+                start_position_ms = 0 # Default to start if error
+        
+        game_state['current_song_start_ms'] = start_position_ms # Store the start time for replays
+
+        # Play the snippet
+        try:
+            print(f"Playing track: {game_state['current_song_details']['uri']} on device: {device_id} from {start_position_ms}ms")
+            spotify_manager.play_track_snippet(
+                game_state['current_song_details']['uri'], 
+                device_id, 
+                playback_duration, 
+                start_position_ms
+            )
+        except Exception as e:
+             print(f"Error playing track snippet: {e}")
+             flash(f"Error playing song: {e}. Please ensure the device is active.", "error")
+             # Consider redirecting if playback fails critically
+             # return redirect(url_for('select_device'))
+        
+        # Save the updated game state
+        session['game_state'] = game_state
+        print(f"State after starting round: {game_state}") # Debug log
+
+    # Render the game page with the current state
+    # Make sure game_state is up-to-date before rendering
+    return render_template('play_game.html', game_state=session.get('game_state'))
 
 # --- Admin Routes ---
 
