@@ -15,4 +15,8 @@ BACKGROUND_COLOR = "#323232"  # Default background color
 MAX_GUESS_COUNT = 3  # Maximum number of guesses per song
 MAX_LIVES = 3  # Number of lives the player starts with
 VOLUME_LEVEL = 80  # Desired volume level (0-100)
+
+# Admin User ID (replace with your actual Spotify User ID)
+ADMIN_USER_ID = '31whtpg3agm4alevt5wxjysyy6fq'
+
 # =============================

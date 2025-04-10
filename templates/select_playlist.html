@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Select Playlist - Spotify Guessr{% endblock %}
+
+{% block content %}
+    <h2>Select Playlist</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class=flashes>
+        {% for category, message in messages %}
+          <li class="{{ category }}" style="color: {{ 'red' if category == 'error' else 'black' }};">{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('select_playlist') }}">
+        <p>Choose a source for the songs:</p>
+        
+        <label for="playlist_choice">Select from your playlists or Liked Songs:</label><br>
+        <select name="playlist_id" id="playlist_choice">
+            <option value="" disabled selected>-- Select an Option --</option>
+            <option value="liked">Liked Songs</option>
+            {% for playlist in playlists %}
+                <option value="{{ playlist.id }}">{{ playlist.name }} ({{ playlist.tracks_total }} songs)</option>
+            {% endfor %}
+        </select>
+        <br><br>
+        
+        <label for="custom_url">Or enter a Spotify Playlist URL or ID:</label><br>
+        <input type="text" name="custom_url" id="custom_url" size="40" placeholder="spotify:playlist:.... or https://open.spotify.com/playlist/...">
+        
+        <p><small>Note: Only one selection (dropdown or custom URL) will be used. Custom URL takes priority if filled.</small></p>
+
+        <button type="submit" class="button">Use this Playlist</button>
+    </form>
+
+    <p style="margin-top: 2em;"><a href="{{ url_for('select_device') }}">Back to Device Selection</a></p>
+{% endblock %}
+
+{% block debug_content %}
+    Playlist: <strong>{{ session.get('playlist_name', 'N/A') }}</strong>
+    <br>Tracks Loaded: {{ session.get('track_uris') | length if session.get('track_uris') else 'N/A' }}
+    <hr style="border-color: #555;">
+    <strong>Loaded Tracks Preview:</strong><br>
+    {% if session.get('track_names') and session.get('track_artists') %}
+        <ol style="margin: 0; padding-left: 20px; font-size: 0.9em;">
+        {% for i in range(session['track_names'] | length) %}
+            <li>{{ session['track_names'][i] }} - <em>{{ session['track_artists'][i] }}</em></li>
+        {% else %}
+            <li>No tracks loaded yet / Mismatched track data.</li>
+        {% endfor %}
+        </ol>
+    {% else %}
+        <small>No tracks loaded in session.</small>
+    {% endif %}
+{% endblock %} 
