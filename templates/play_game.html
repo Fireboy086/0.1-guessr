@@ -4,10 +4,10 @@
 
 {% block content %}
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1em;">
-        <h2>Round {{ game_state.get('round', 1) }}</h2>
+        <h2>Round <span id="round-value">{{ game_state.get('round', 1) }}</span></h2>
         <div>
-            <span>Score: <strong>{{ game_state.get('score', 0) }}</strong></span> | 
-            <span>Lives: <strong style="color: {{ 'red' if game_state.get('lives', 3) <= 1 else 'inherit' }};">{{ game_state.get('lives', 3) }}</strong></span>
+            <span>Score: <strong id="score-value">{{ game_state.get('score', 0) }}</strong></span> | 
+            <span>Lives: <strong id="lives-value" style="color: {{ 'red' if game_state.get('lives', 3) <= 1 else 'inherit' }};">{{ game_state.get('lives', 3) }}</strong></span>
         </div>
     </div>
 
@@ -26,18 +26,18 @@
     <p>Listen to the clip and make your guess!</p>
 
     {# Guess Form #}
-    <form method="POST" action="{{ url_for('play_game') }}" style="margin-bottom: 1em;">
+    <form id="guess-form" method="POST" action="{{ url_for('play_game') }}" style="margin-bottom: 1em;">
         <input type="hidden" name="action" value="guess"> {# Identify the action #}
         <label for="guess_input">Your Guess:</label><br>
-        <input type="text" name="guess" id="guess_input" size="40" required autocomplete="off">
-        <button type="submit" class="button">Submit Guess ({{ game_state.get('guesses_left', 3) }} left)</button>
+        <input type="text" name="guess" id="guess_input" size="40" required autocomplete="off" autofocus>
+        <button type="submit" class="button">Submit Guess (<span id="guess-count">{{ game_state.get('guesses_left', 3) }}</span> left)</button>
     </form>
 
     {# Replay Form #}
-    <form method="POST" action="{{ url_for('play_game') }}" style="display: inline-block;">
+    <form id="replay-form" method="POST" action="{{ url_for('play_game') }}" style="display: inline-block;">
          <input type="hidden" name="action" value="replay"> {# Identify the action #}
-        <button type="submit" class="button" style="background-color: #555;" {{ 'disabled' if game_state.get('replays_left', 5) <= 0 }}>
-            Replay Clip ({{ game_state.get('replays_left', 5) }} left)
+        <button id="replay-button" type="submit" class="button" style="background-color: #555;" {{ 'disabled' if game_state.get('replays_left', 5) <= 0 }}>
+            Replay Clip (<span id="replay-count">{{ game_state.get('replays_left', 5) }}</span> left)
         </button>
     </form>
 
@@ -49,6 +49,191 @@
 
     <p style="margin-top: 2em;"><a href="{{ url_for('index') }}">Quit Game</a></p>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Simple function to display flash-like messages dynamically
+    function showMessage(text, type = 'info') {
+        const messagesDiv = document.querySelector('.flashes') || document.createElement('div');
+        if (!document.querySelector('.flashes')) {
+            messagesDiv.className = 'flashes';
+            messagesDiv.style.marginBottom = '1em';
+            document.querySelector('form[action="{{ url_for('play_game') }}"]').parentNode.insertBefore(messagesDiv, document.querySelector('p')); // Insert before the <p>
+        }
+        
+        // Clear previous messages maybe?
+        // messagesDiv.innerHTML = ''; 
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `flash flash-${type}`;
+        // Basic styling matching template
+        let bgColor = '#eeeeee';
+        let borderColor = '#cccccc';
+        if (type === 'error') { bgColor = '#ffdddd'; borderColor = '#ffaaaa'; }
+        else if (type === 'success') { bgColor = '#ddffdd'; borderColor = '#aaffaa'; }
+        else if (type === 'warning') { bgColor = '#fff3cd'; borderColor = '#ffeeba'; }
+        
+        messageDiv.style.padding = '8px';
+        messageDiv.style.borderRadius = '4px';
+        messageDiv.style.backgroundColor = bgColor;
+        messageDiv.style.border = `1px solid ${borderColor}`;
+        messageDiv.style.color = '#333';
+        messageDiv.style.marginBottom = '5px'; // Space between messages
+        messageDiv.textContent = text;
+        
+        messagesDiv.appendChild(messageDiv);
+    }
+
+    // Function to update UI elements (score, lives, guesses, replays)
+    function updateUI(data) {
+        if (data.score !== undefined) {
+             document.querySelector('#score-value').textContent = data.score;
+        }
+        if (data.lives !== undefined) {
+            const livesEl = document.querySelector('#lives-value');
+            livesEl.textContent = data.lives;
+            livesEl.style.color = data.lives <= 1 ? 'red' : 'inherit';
+        }
+         if (data.guesses_left !== undefined) {
+            document.querySelector('#guess-count').textContent = data.guesses_left;
+        }
+        if (data.replays_left !== undefined) {
+            document.querySelector('#replay-count').textContent = data.replays_left;
+            document.querySelector('#replay-button').disabled = data.replays_left <= 0;
+        }
+        if (data.round !== undefined) {
+            document.querySelector('#round-value').textContent = data.round;
+        }
+    }
+
+    // Function to trigger fetching and starting the next round
+    function startNextRound() {
+        console.log("Requesting next round...");
+        fetch("{{ url_for('play_game') }}", {
+            method: 'GET', // GET request tells server to start next round if needed
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest' // Identify as AJAX
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log("Next round data:", data);
+            if (data.error) {
+                showMessage(data.error, 'error');
+            } else if (data.game_over) {
+                // Redirect or show game over message
+                let message = `Game Over! Final Score: ${data.final_score}`;
+                if(data.status === 'won') message = `You Won! Final Score: ${data.final_score}`;
+                alert(message); // Simple alert for now
+                window.location.href = "{{ url_for('index') }}"; // Redirect home
+            } else {
+                // Update UI for the new round
+                updateUI(data);
+                // Re-enable guess form, clear input
+                document.querySelector('#guess-form button').disabled = false;
+                document.querySelector('#guess_input').value = '';
+                document.querySelector('#guess_input').focus();
+            }
+        })
+        .catch(error => {
+            console.error('Error starting next round:', error);
+            showMessage('Error communicating with server for next round.', 'error');
+        });
+    }
+
+    // --- Event Listeners --- 
+
+    // Guess Form Submission
+    document.getElementById('guess-form').addEventListener('submit', function(event) {
+        event.preventDefault(); // Prevent default form submission
+        const guessInput = document.getElementById('guess_input');
+        const guess = guessInput.value.trim();
+        const submitButton = this.querySelector('button');
+
+        if (!guess) {
+            showMessage('Please enter a guess.', 'warning');
+            return;
+        }
+        
+        submitButton.disabled = true; // Disable button during request
+        
+        fetch(this.action, {
+            method: 'POST',
+            body: new FormData(this),
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest' // Identify as AJAX
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log("Guess response:", data);
+            showMessage(data.message, data.result === 'correct' ? 'success' : (data.result === 'incorrect' ? 'warning' : 'error'));
+            
+            if (data.result === 'correct' || data.result === 'incorrect_final') {
+                // Correct guess or out of guesses - update score/lives and delay next round
+                updateUI(data); 
+                // If game over, handle it immediately
+                if (data.game_over) {
+                     alert(data.message); // Show final message
+                     window.location.href = "{{ url_for('index') }}"; 
+                } else {
+                    // Wait 2 seconds before starting next round
+                    setTimeout(startNextRound, 2000); 
+                }
+            } else if (data.result === 'incorrect') {
+                // Incorrect, but guesses remain
+                updateUI(data);
+                guessInput.value = ''; // Clear input for next guess
+                guessInput.focus();
+                submitButton.disabled = false; // Re-enable button
+            } else {
+                // Other error? Re-enable button
+                 submitButton.disabled = false;
+            }
+        })
+        .catch(error => {
+            console.error('Error submitting guess:', error);
+            showMessage('Error communicating with server.', 'error');
+            submitButton.disabled = false; // Re-enable button on error
+        });
+    });
+
+    // Replay Form Submission
+    document.getElementById('replay-form').addEventListener('submit', function(event) {
+        event.preventDefault();
+        const replayButton = this.querySelector('button');
+        replayButton.disabled = true;
+        
+        fetch(this.action, {
+            method: 'POST', 
+            body: new FormData(this), 
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log("Replay response:", data);
+            if(data.error) {
+                showMessage(data.error, data.status || 'error');
+                replayButton.disabled = false; // Re-enable if error allows more replays
+            } else {
+                showMessage(data.message || 'Replayed!', 'info');
+                updateUI(data); // Update replay count
+                // Keep button disabled if replays hit 0
+                if (data.replays_left !== undefined && data.replays_left > 0) {
+                     replayButton.disabled = false;
+                }
+            }
+             document.getElementById('guess_input').focus(); // Keep focus on guess input
+        })
+        .catch(error => {
+            console.error('Error requesting replay:', error);
+            showMessage('Error communicating with server for replay.', 'error');
+             replayButton.disabled = false; // Re-enable on error
+        });
+    });
+
+</script>
 {% endblock %}
 
 {% block debug_content %}
