@@ -266,6 +266,54 @@ def select_playlist():
         return render_template('select_playlist.html', playlists=game_logic.get_user_playlists() if 'game_logic' in locals() else [], debug_track_list=[])
         # Or maybe redirect to index: return redirect(url_for('index'))
 
+@app.route('/select-mode', methods=['GET', 'POST'])
+def select_mode():
+    token_info = get_token_info()
+    if not token_info:
+        return redirect(url_for('index'))
+    # Ensure previous steps are done
+    if 'device_id' not in session:
+        flash("Please select a device first.", "error")
+        return redirect(url_for('select_device'))
+    if 'track_uris' not in session:
+        flash("Please select a playlist first.", "error")
+        return redirect(url_for('select_playlist'))
+
+    if request.method == 'POST':
+        # Get selections from form
+        game_mode = request.form.get('guessing_difficulty')
+        playback_duration_str = request.form.get('playback_duration')
+        playback_start = request.form.get('playback_start')
+
+        # Validate selections
+        valid_modes = ["Normal", "Hard", "Harder", "Expert"]
+        valid_durations = ["3.0", "2.0", "1.0", "0.5"]
+        valid_starts = ["start", "random"]
+
+        if not game_mode or game_mode not in valid_modes:
+            flash("Invalid guessing difficulty selected.", "error")
+            return render_template('select_mode.html')
+        if not playback_duration_str or playback_duration_str not in valid_durations:
+            flash("Invalid playback duration selected.", "error")
+            return render_template('select_mode.html')
+        if not playback_start or playback_start not in valid_starts:
+            flash("Invalid playback start position selected.", "error")
+            return render_template('select_mode.html')
+
+        # Store valid selections in session
+        session['game_mode'] = game_mode
+        session['playback_duration'] = float(playback_duration_str) # Store as float
+        session['playback_start'] = playback_start
+
+        # Clear any old game state before starting a new game
+        session.pop('game_state', None)
+
+        # Redirect to the main game play route
+        return redirect(url_for('play_game'))
+
+    # GET request: show the form
+    return render_template('select_mode.html')
+
 # --- Admin Routes ---
 
 @app.route('/toggle-debug', methods=['POST'])

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Select Game Mode - Spotify Guessr{% endblock %}
+
+{% block content %}
+    <h2>Select Game Mode & Options</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class=flashes>
+        {% for category, message in messages %}
+          <li class="{{ category }}" style="color: {{ 'red' if category == 'error' else 'black' }};">{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('select_mode') }}">
+        
+        {# Guessing Difficulty #}
+        <fieldset style="margin-bottom: 1em; padding: 1em; border: 1px solid #ccc; border-radius: 5px;">
+            <legend>Guessing Difficulty</legend>
+            <input type="radio" name="guessing_difficulty" value="Normal" id="guess_normal" required checked>
+            <label for="guess_normal">Normal (Partial matches allowed, e.g., Levenshtein <= 2)</label><br>
+            <input type="radio" name="guessing_difficulty" value="Hard" id="guess_hard">
+            <label for="guess_hard">Hard (Close matches allowed, e.g., Levenshtein <= 1)</label><br>
+            <input type="radio" name="guessing_difficulty" value="Harder" id="guess_harder">
+            <label for="guess_harder">Harder (Exact title match only)</label><br>
+            <input type="radio" name="guessing_difficulty" value="Expert" id="guess_expert">
+            <label for="guess_expert">Expert (Exact 'Title by Artist' match only)</label><br>
+        </fieldset>
+
+        {# Playback Duration Difficulty #}
+        <fieldset style="margin-bottom: 1em; padding: 1em; border: 1px solid #ccc; border-radius: 5px;">
+            <legend>Playback Duration</legend>
+            <input type="radio" name="playback_duration" value="3.0" id="dur_normal" required checked>
+            <label for="dur_normal">Normal (3 seconds)</label><br>
+            <input type="radio" name="playback_duration" value="2.0" id="dur_hard">
+            <label for="dur_hard">Hard (2 seconds)</label><br>
+            <input type="radio" name="playback_duration" value="1.0" id="dur_harder">
+            <label for="dur_harder">Harder (1 second)</label><br>
+            <input type="radio" name="playback_duration" value="0.5" id="dur_expert">
+            <label for="dur_expert">Expert (0.5 seconds)</label><br>
+        </fieldset>
+
+        {# Start/Random Playback #}
+        <fieldset style="margin-bottom: 1em; padding: 1em; border: 1px solid #ccc; border-radius: 5px;">
+            <legend>Playback Start Position</legend>
+            <input type="radio" name="playback_start" value="start" id="play_start" required checked>
+            <label for="play_start">Start from Beginning</label><br>
+            <input type="radio" name="playback_start" value="random" id="play_random">
+            <label for="play_random">Start from Random Position</label><br>
+        </fieldset>
+        
+        <button type="submit" class="button">Start Game</button>
+    </form>
+
+    <p style="margin-top: 2em;"><a href="{{ url_for('select_playlist') }}">Back to Playlist Selection</a></p>
+{% endblock %}
+
+{% block debug_content %}
+    {{ super() }} {# Include the default debug content from base.html #}
+    <hr style="border-color: #555;">
+    <strong>Selected Mode Preview:</strong><br>
+    Guessing: {{ session.get('game_mode', 'N/A') }}<br>
+    Duration: {{ session.get('playback_duration', 'N/A') }}s<br>
+    Start Pos: {{ session.get('playback_start', 'N/A') }}
+{% endblock %} 
