@@ -1,2 +1,4 @@
-spotipy==2.22.1
+Flask
+python-dotenv
+spotipy
 configparser
