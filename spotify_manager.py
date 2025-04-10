@@ -88,26 +88,23 @@ class SpotifyManager:
             self.sp.start_playback(
                 device_id=device_id, 
                 uris=[track_uri], 
-                position_ms=int(start_time * 1000)
+                position_ms=start_time
             )
             self._schedule_pause(device_id, duration)
         except Exception as e:
             print(f"Error starting playback: {e}")
             self.playback_active = False
     
-    def play_track(self, track_uri, start_time=0, duration=PLAYBACK_DURATION, device_id=None):
-        """Play a track for the specified duration"""
+    def play_track_snippet(self, track_uri, device_id, duration, start_time_ms=0):
+        """Play a track snippet for the specified duration from a start time (ms)."""
         if not device_id:
-            device_id = self.get_active_device()
-            
-        if not device_id:
-            print("No active device available for playback.")
+            print("No device ID provided for playback.")
             return False
         
         # Start playback in a separate thread
         thread = threading.Thread(
             target=self._delayed_start, 
-            args=(track_uri, device_id, start_time, duration)
+            args=(track_uri, device_id, start_time_ms, duration)
         )
         thread.daemon = True
         thread.start()
@@ -154,7 +151,7 @@ class SpotifyManager:
         if not device_id:
             return None, None, None
             
-        success = self.play_track(track_uri, 0, PLAYBACK_DURATION, device_id)
+        success = self.play_track_snippet(track_uri, device_id, PLAYBACK_DURATION, 0)
         if success:
             return track_uri, track_name, track_artist
         else:
@@ -174,7 +171,7 @@ class SpotifyManager:
         if extend_duration:
             duration += 0.5  # Add extra time
         
-        return self.play_track(self.current_track, 0, duration, device_id)
+        return self.play_track_snippet(self.current_track, device_id, duration, 0)
     
     def set_volume(self, volume_level):
         """Set the volume level (0-100)"""
