@@ -60,19 +60,6 @@ class StartScreen(ctk.CTkFrame):
         )
         self.subtitle_label.pack(pady=(0, 10))
         
-        # Settings button
-        self.settings_button = ctk.CTkButton(
-            self.header_frame,
-            text="⚙️ Settings",
-            command=self._on_settings_click,
-            width=120,
-            height=32,
-            corner_radius=8,
-            fg_color=("#333333", "#555555"),
-            hover_color=("#444444", "#666666")
-        )
-        self.settings_button.place(relx=0.97, rely=0.15, anchor="e")
-        
         # ===== CONTENT SECTION =====
         self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.content_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
@@ -114,7 +101,7 @@ class StartScreen(ctk.CTkFrame):
             self.tab_frame,
             text="Custom URL",
             command=lambda: self._change_tab("custom"),
-            fg_color=("#f0f0f0", "#1e1e1e"),
+            fg_color="transparent",
             hover_color=("gray80", "gray30"),
             corner_radius=8,
             width=100,
@@ -309,7 +296,7 @@ class StartScreen(ctk.CTkFrame):
         if tab == "default":
             # Highlight default tab
             self.default_tab.configure(fg_color=("#1DB954", "#1DB954"), text_color="white")
-            self.custom_tab.configure(fg_color=("#f0f0f0", "#1e1e1e"), text_color=("black", "white"))
+            self.custom_tab.configure(fg_color="transparent", text_color=("black", "white"))
             
             # Show playlist container, hide custom URL frame
             self.playlist_container.pack(fill="both", expand=True, padx=10, pady=10)
@@ -325,7 +312,7 @@ class StartScreen(ctk.CTkFrame):
         else:
             # Highlight custom tab
             self.custom_tab.configure(fg_color=("#1DB954", "#1DB954"), text_color="white")
-            self.default_tab.configure(fg_color=("#f0f0f0", "#1e1e1e"), text_color=("black", "white"))
+            self.default_tab.configure(fg_color="transparent", text_color=("black", "white"))
             
             # Hide playlist container, show custom URL frame
             self.playlist_container.pack_forget()
@@ -1189,8 +1176,4 @@ class StartScreen(ctk.CTkFrame):
         
         # Make window appear on top and lift it
         window.lift()
-        window.focus_force()
-    
-    def _on_settings_click(self):
-        """Open settings screen"""
-        self.parent.show_settings_screen()
+        window.focus_force() 

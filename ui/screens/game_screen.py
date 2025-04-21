@@ -10,7 +10,7 @@ from game_logic import levenshtein_distance
 class GameScreen(ctk.CTkFrame):
     """Main game screen for the Spotify Guessing Game"""
     
-    def __init__(self, parent, game_logic, spotify_manager, track_uris, track_names, track_artists, game_mode, game_settings=None):
+    def __init__(self, parent, game_logic, spotify_manager, track_uris, track_names, track_artists, game_mode):
         super().__init__(parent, corner_radius=10, fg_color="transparent")
         self.parent = parent
         self.game_logic = game_logic
@@ -31,12 +31,6 @@ class GameScreen(ctk.CTkFrame):
         self.lives = MAX_LIVES
         self.guesses = []
         self.played_songs = []
-        
-        # Game settings
-        self.game_settings = game_settings or {}
-        self.show_answers = self.game_settings.get('show_answers', False)
-        self.infinite_lives = self.game_settings.get('infinite_lives', False)
-        self.skip_verification = self.game_settings.get('skip_verification', False)
         
         # Suggestion list state
         self.suggestion_buttons = []
@@ -73,27 +67,13 @@ class GameScreen(ctk.CTkFrame):
         )
         self.title_label.pack(pady=10)
         
-        # Lives counter with infinite indicator if enabled
-        lives_text = "Lives: ∞" if self.infinite_lives else f"Lives: {self.lives}"
+        # Lives counter
         self.lives_label = ctk.CTkLabel(
             self.header_frame,
-            text=lives_text,
+            text=f"Lives: {self.lives}",
             font=ctk.CTkFont(size=16)
         )
         self.lives_label.pack(pady=(0, 10))
-        
-        # Debug mode indicator
-        if self.show_answers:
-            self.debug_frame = ctk.CTkFrame(self, fg_color="#FF5733")
-            self.debug_frame.pack(fill="x", padx=20, pady=(0, 10))
-            
-            self.debug_label = ctk.CTkLabel(
-                self.debug_frame,
-                text="DEBUG MODE: Answers will be shown",
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color="white"
-            )
-            self.debug_label.pack(pady=5)
         
         # Song info frame (hidden initially)
         self.song_info_frame = ctk.CTkFrame(self)
@@ -249,7 +229,7 @@ class GameScreen(ctk.CTkFrame):
     
     def play_random_track(self):
         """Play a random track from the playlist"""
-        if not self.infinite_lives and self.lives <= 0:
+        if self.lives <= 0:
             self.title_label.configure(text="Game Over! You're out of lives.")
             return
             
@@ -275,12 +255,6 @@ class GameScreen(ctk.CTkFrame):
         self.game_logic.current_track_name = self.correct_answer
         self.game_logic.current_track_artist = self.current_artist
         
-        # Show debug info if enabled
-        if self.show_answers:
-            self.title_label.configure(text=f"DEBUG - Answer: {self.correct_answer}")
-        else:
-            self.title_label.configure(text=f"Guess the Song! (Mode: {self.game_mode})")
-        
         # Play the track
         success = self.spotify_manager.play_track(
             self.current_track, 
@@ -288,7 +262,9 @@ class GameScreen(ctk.CTkFrame):
             duration=self.current_play_time
         )
         
-        if not success:
+        if success:
+            self.title_label.configure(text=f"Guess the Song! (Mode: {self.game_mode})")
+        else:
             self.title_label.configure(text="Error playing track. Check your Spotify device.")
         
         # Clear the entry
@@ -351,7 +327,7 @@ class GameScreen(ctk.CTkFrame):
                     self.suggestions_listbox,
                     text=suggestion,
                     anchor="w",
-                    fg_color=("#f0f0f0", "#1e1e1e"),
+                    fg_color="transparent",
                     text_color=("gray10", "gray90"),
                     hover_color=("gray80", "gray30"),
                     height=30,
@@ -497,50 +473,23 @@ class GameScreen(ctk.CTkFrame):
     
     def secure_guess(self):
         """Process the user's guess"""
-        guess_text = self.entry.get().strip()
-        if not guess_text:
+        guess = self.entry.get().strip()
+        if not guess:
+            self.title_label.configure(text="Please enter a guess!")
             return
-            
-        # Add to guesses list
-        self.guesses.append(guess_text)
         
-        # Skip verification if enabled
-        if self.skip_verification:
-            # Auto win
-            self.show_feedback(True)
-            self.title_label.configure(text="Correct!")
-            self.show_song_info(self.correct_answer, self.current_artist)
-            
-            # Record the result
-            self.played_songs.append({
-                'song': f"{self.correct_answer} by {self.current_artist}",
-                'guesses': self.guesses.copy(),
-                'result': 'Correct',
-                'time_revealed': self.revealed_seconds
-            })
-            
-            # Play next track after delay
-            self.after(2000, self.play_random_track)
-            return
-            
-        # Check if the guess is correct using fuzzy matching
-        normalized_guess = guess_text.lower()
-        normalized_answer = self.correct_answer.lower()
+        self.guesses.append(guess)
         
-        # Calculate normalized Levenshtein distance
-        max_len = max(len(normalized_guess), len(normalized_answer))
-        distance = levenshtein_distance(normalized_guess, normalized_answer)
-        normalized_distance = distance / max_len if max_len > 0 else 1.0
+        # Double-check game logic has the current track information
+        self.game_logic.current_track = self.current_track
+        self.game_logic.current_track_name = self.correct_answer
+        self.game_logic.current_track_artist = self.current_artist
         
-        # Consider correct if the normalized distance is below threshold
-        # For shorter titles, be more lenient
-        threshold = 0.4 if len(normalized_answer) < 10 else 0.3
+        # Check if the guess is correct
+        print(f"Checking guess: '{guess}'")
+        print(f"Current track: '{self.correct_answer}' by '{self.current_artist}'")
         
-        is_correct = (normalized_distance <= threshold or 
-                    normalized_answer in normalized_guess or
-                    normalized_guess in normalized_answer)
-        
-        if is_correct:
+        if self.game_logic.check_guess(guess):
             self.show_feedback(True)
             self.title_label.configure(text="Correct!")
             self.show_song_info(self.correct_answer, self.current_artist)
@@ -560,9 +509,8 @@ class GameScreen(ctk.CTkFrame):
             self.guess_count += 1
             
             if self.guess_count >= MAX_GUESS_COUNT:
-                if not self.infinite_lives:
-                    self.lives -= 1
-                    self.update_lives_label()
+                self.lives -= 1
+                self.update_lives_label()
                 
                 self.title_label.configure(text="Out of guesses!")
                 self.show_song_info(self.correct_answer, self.current_artist)
@@ -588,9 +536,8 @@ class GameScreen(ctk.CTkFrame):
     
     def give_up(self):
         """Skip the current song"""
-        if not self.infinite_lives:
-            self.lives -= 1
-            self.update_lives_label()
+        self.lives -= 1
+        self.update_lives_label()
         
         self.title_label.configure(text="Skipping...")
         self.show_song_info(self.correct_answer, self.current_artist)
@@ -608,10 +555,7 @@ class GameScreen(ctk.CTkFrame):
     
     def update_lives_label(self):
         """Update the lives counter"""
-        if self.infinite_lives:
-            self.lives_label.configure(text="Lives: ∞")
-        else:
-            self.lives_label.configure(text=f"Lives: {self.lives}")
+        self.lives_label.configure(text=f"Lives: {self.lives}")
     
     def show_song_info(self, song, artist):
         """Show the song info"""
