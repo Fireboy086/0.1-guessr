@@ -860,8 +860,11 @@ class StartScreen(ctk.CTkFrame):
     def _start_game(self):
         """Start the game with current settings"""
         try:
-            # Get game mode
-            game_mode = self.mode_var.get()
+            # Get game settings
+            guessdiff = self.mode_var.get()
+            perreveal = 1.0  # Default value = 0.5
+            randomstart = True  # Default value = False
+            game_settings = (guessdiff, perreveal, randomstart)
             
             # Get selected playlist
             playlist_id = self.selected_playlist
@@ -878,14 +881,14 @@ class StartScreen(ctk.CTkFrame):
                 # Start game with selected default playlist
                 threading.Thread(
                     target=self._start_with_default_playlist,
-                    args=(playlist_id, game_mode),
+                    args=(playlist_id, game_settings),
                     daemon=True
                 ).start()
             else:
                 # Start game with custom playlist
                 threading.Thread(
                     target=self._start_with_custom_playlist,
-                    args=(playlist_id, game_mode),
+                    args=(playlist_id, game_settings),
                     daemon=True
                 ).start()
                 
@@ -908,13 +911,13 @@ class StartScreen(ctk.CTkFrame):
         # Force update the UI
         self.update_idletasks()
     
-    def _start_with_default_playlist(self, playlist_id, game_mode):
+    def _start_with_default_playlist(self, playlist_id, game_settings):
         """Start game with default playlist"""
         try:
             # Update button
             self.after(0, lambda: self.start_button.configure(text="Loading tracks..."))
             
-            print(f"Starting game with playlist_id: {playlist_id}, mode: {game_mode}")
+            print(f"Starting game with playlist_id: {playlist_id}, settings: {game_settings}")
             
             # Call the correct method based on what's available
             if playlist_id == "liked_songs":
@@ -1043,7 +1046,7 @@ class StartScreen(ctk.CTkFrame):
                 return
             
             # Launch game in main thread
-            self.after(0, lambda u=track_uris, n=track_names, a=track_artists, m=game_mode: 
+            self.after(0, lambda u=track_uris, n=track_names, a=track_artists, m=game_settings: 
             self._launch_game(u, n, a, m))
             
         except Exception as e:
@@ -1052,7 +1055,7 @@ class StartScreen(ctk.CTkFrame):
             # Pass the error message directly in the lambda to avoid scope issues
             self.after(0, lambda msg=error_msg: self._show_error(f"Error: {msg}"))
     
-    def _start_with_custom_playlist(self, playlist_id, game_mode):
+    def _start_with_custom_playlist(self, playlist_id, game_settings):
         """Start game with custom playlist"""
         try:
             # Update button
@@ -1064,7 +1067,7 @@ class StartScreen(ctk.CTkFrame):
                 if hasattr(self.game_logic, '_get_playlist_tracks_by_id'):
                     track_uris, track_names, track_artists = self.game_logic._get_playlist_tracks_by_id(playlist_id)
                     if track_uris and len(track_uris) >= 5:
-                        self.after(0, lambda u=track_uris, n=track_names, a=track_artists, m=game_mode: 
+                        self.after(0, lambda u=track_uris, n=track_names, a=track_artists, m=game_settings: 
                         self._launch_game(u, n, a, m))
                         return
             except Exception as inner_e:
@@ -1101,7 +1104,7 @@ class StartScreen(ctk.CTkFrame):
             track_artists = [", ".join([a['name'] for a in t['artists']]) for t in tracks]
             
             # Launch game in main thread
-            self.after(0, lambda u=track_uris, n=track_names, a=track_artists, m=game_mode: 
+            self.after(0, lambda u=track_uris, n=track_names, a=track_artists, m=game_settings: 
             self._launch_game(u, n, a, m))
             
         except Exception as e:
@@ -1110,26 +1113,26 @@ class StartScreen(ctk.CTkFrame):
             # Pass the error message directly in the lambda to avoid scope issues
             self.after(0, lambda msg=error_msg: self._show_error(f"Error: {msg}"))
     
-    def _launch_game(self, track_uris, track_names, track_artists, game_mode):
+    def _launch_game(self, track_uris, track_names, track_artists, game_settings):
         """Launch the game with the loaded tracks"""
-        print(f"Launching game with {len(track_uris)} tracks in mode: {game_mode}")
+        print(f"Launching game with {len(track_uris)} tracks in settings: {game_settings}")
         # Call the parent method to start the game
         try:
             # Ensure the game mode name is correct
             # Map "HarderHarder" to "Expert" if needed for backward compatibility
-            if game_mode == "HarderHarder":
-                game_mode = "Expert"
+            if game_settings[0] == "HarderHarder":
+                game_settings = ("Expert", game_settings[1], game_settings[2])
                 print("Mapping 'HarderHarder' mode to 'Expert' for compatibility")
             
-            # Set the game mode in game_logic if needed
-            if hasattr(self.game_logic, 'set_game_mode'):
-                self.game_logic.set_game_mode(game_mode)
+            # Set the game settings in game_logic if needed
+            if hasattr(self.game_logic, 'set_game_settings'):
+                self.game_logic.set_game_settings(game_settings)
                 
             # Call the appropriate method on parent to start the game
             if hasattr(self.parent, 'start_game'):
-                self.parent.start_game(track_uris, track_names, track_artists, game_mode)
+                self.parent.start_game(track_uris, track_names, track_artists, game_settings)
             elif hasattr(self.parent, 'show_game_screen'):
-                self.parent.show_game_screen(track_uris, track_names, track_artists, game_mode)
+                self.parent.show_game_screen(track_uris, track_names, track_artists, game_settings)
             else:
                 raise Exception("Parent object has no method to start the game")
         except Exception as e:

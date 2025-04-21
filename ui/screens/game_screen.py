@@ -1,6 +1,11 @@
 """
 Game Screen - Main game screen where the guessing happens
 """
+import sys
+import os
+# Add the parent directory to the path so we can import config
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 import random
 import time
 import customtkinter as ctk
@@ -10,7 +15,7 @@ from game_logic import levenshtein_distance
 class GameScreen(ctk.CTkFrame):
     """Main game screen for the Spotify Guessing Game"""
     
-    def __init__(self, parent, game_logic, spotify_manager, track_uris, track_names, track_artists, game_mode):
+    def __init__(self, parent, game_logic, spotify_manager, track_uris, track_names, track_artists, game_settings):
         super().__init__(parent, corner_radius=10, fg_color="transparent")
         self.parent = parent
         self.game_logic = game_logic
@@ -20,17 +25,18 @@ class GameScreen(ctk.CTkFrame):
         self.track_uris = track_uris
         self.track_names = track_names
         self.track_artists = track_artists
-        self.game_mode = game_mode
+        self.game_settings = game_settings  # (guessdiff, perreveal, randomstart)
         self.current_track = None
         self.correct_answer = None
         self.current_artist = None
         self.replay_count = 0
-        self.current_play_time = PLAYBACK_DURATION
-        self.revealed_seconds = PLAYBACK_DURATION
+        self.current_play_time = self.game_settings[1]
+        self.revealed_seconds = self.game_settings[1]
         self.guess_count = 0
         self.lives = MAX_LIVES
         self.guesses = []
         self.played_songs = []
+        self.start_random = self.game_settings[2]
         
         # Suggestion list state
         self.suggestion_buttons = []
@@ -62,7 +68,7 @@ class GameScreen(ctk.CTkFrame):
         # Title
         self.title_label = ctk.CTkLabel(
             self.header_frame,
-            text=f"Guess the Song! (Mode: {self.game_mode})",
+            text=f"Guess the Song! (Mode: {self.game_settings[0]})",
             font=ctk.CTkFont(size=20, weight="bold")
         )
         self.title_label.pack(pady=10)
@@ -136,7 +142,7 @@ class GameScreen(ctk.CTkFrame):
         # Replay button
         self.replay_button = ctk.CTkButton(
             self.buttons_frame,
-            text="Replay 0.5s",
+            text=f"Replay {self.game_settings[1]}s",
             command=self._on_replay_button_click,
             width=120,
             height=35,
@@ -239,10 +245,13 @@ class GameScreen(ctk.CTkFrame):
         
         # Reset game state for the new track
         self.replay_count = 0
-        self.current_play_time = PLAYBACK_DURATION
-        self.revealed_seconds = PLAYBACK_DURATION
+        self.current_play_time = self.game_settings[1]
+        self.revealed_seconds = self.current_play_time
         self.guess_count = 0
+        self.lives = MAX_LIVES
         self.guesses = []
+        self.played_songs = []
+        self.start_random = self.game_settings[2]
         
         # Get a random track
         random_index = random.randint(0, len(self.track_uris) - 1)
@@ -255,15 +264,25 @@ class GameScreen(ctk.CTkFrame):
         self.game_logic.current_track_name = self.correct_answer
         self.game_logic.current_track_artist = self.current_artist
         
+        # Calculate start time if random start is enabled
+        start_time = 0
+        if self.start_random:
+            track_duration = self.spotify_manager.get_track_duration(self.current_track)
+            if track_duration:
+                # Convert to milliseconds and ensure we have enough time for playback
+                max_start = int((track_duration - self.current_play_time) * 1000)
+                if max_start > 0:
+                    start_time = random.randint(0, max_start) / 1000  # Convert back to seconds
+        
         # Play the track
         success = self.spotify_manager.play_track(
-            self.current_track, 
-            start_time=0, 
+            self.current_track,
+            start_time=start_time,
             duration=self.current_play_time
         )
         
         if success:
-            self.title_label.configure(text=f"Guess the Song! (Mode: {self.game_mode})")
+            self.title_label.configure(text=f"Guess the Song! (Mode: {self.game_settings[0]})")
         else:
             self.title_label.configure(text="Error playing track. Check your Spotify device.")
         
@@ -278,16 +297,26 @@ class GameScreen(ctk.CTkFrame):
         """Replay the current song with extended duration"""
         if self.replay_count < 5:
             self.replay_count += 1
-            self.revealed_seconds += PLAYBACK_DURATION
+            self.revealed_seconds += self.game_settings[1]
             
             # Ensure game logic has the current track information
             self.game_logic.current_track = self.current_track
             self.game_logic.current_track_name = self.correct_answer
             self.game_logic.current_track_artist = self.current_artist
             
+            # Calculate start time if random start is enabled
+            start_time = 0
+            if self.start_random:
+                track_duration = self.spotify_manager.get_track_duration(self.current_track)
+                if track_duration:
+                    # Convert to milliseconds and ensure we have enough time for playback
+                    max_start = int((track_duration - self.revealed_seconds) * 1000)
+                    if max_start > 0:
+                        start_time = random.randint(0, max_start) / 1000  # Convert back to seconds
+            
             success = self.spotify_manager.play_track(
                 self.current_track,
-                start_time=0,
+                start_time=start_time,
                 duration=self.revealed_seconds
             )
             
@@ -314,7 +343,7 @@ class GameScreen(ctk.CTkFrame):
         ]))
         
         # Get filtering function for current game mode
-        filter_func = self.game_logic.get_game_mode_rules(self.game_mode)
+        filter_func = self.game_logic.get_game_mode_rules(self.game_settings[0])
         
         # Filter suggestions
         matched = [item for item in all_full_names if filter_func(query, item.lower())]
@@ -358,11 +387,11 @@ class GameScreen(ctk.CTkFrame):
             no_match_label.pack(fill="x", padx=10, pady=10)
             
             # Add hint based on game mode
-            if self.game_mode == "Normal":
+            if self.game_settings[0] == "Normal":
                 hint_text = "Try a different spelling or shorter input"
-            elif self.game_mode == "Hard":
+            elif self.game_settings[0] == "Hard":
                 hint_text = "Exact match needed (±1 error)"
-            elif self.game_mode == "Harder":
+            elif self.game_settings[0] == "Harder":
                 hint_text = "Exact song title needed"
             else:  # Expert mode
                 hint_text = "Exact 'title by artist' needed"

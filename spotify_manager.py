@@ -153,7 +153,7 @@ class SpotifyManager:
         # Determine playback duration
         duration = PLAYBACK_DURATION
         if extend_duration:
-            duration += 0.5  # Add extra time
+            duration += duration  # Add extra time
         
         return self.play_track(self.current_track, 0, duration, device_id)
     
@@ -177,3 +177,11 @@ class SpotifyManager:
         except Exception as e:
             print(f"Error getting playback state: {e}")
             return None 
+    
+    def get_track_duration(self, track_uri):
+        """Get the duration of a track"""
+        try:
+            return self.sp.track(track_uri)['duration_ms']/1000
+        except Exception as e:
+            print(f"Error getting track duration: {e}")
+            return None

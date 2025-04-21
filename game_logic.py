@@ -3,6 +3,8 @@ Game Logic - Core gameplay logic for the Spotify Guessing Game
 """
 import re
 import random
+from config import *
+from spotify_manager import SpotifyManager
 
 def levenshtein_distance(s1, s2):
     """
@@ -43,7 +45,7 @@ class GameLogic:
         self.current_track = None
         self.current_track_name = None
         self.current_track_artist = None
-        self.game_mode = "Normal"
+        self.game_settings = ("Easy", 1.0, False)  # (guessdiff, perrevel, randomstart)
         self.track_uris = []
         self.track_names = []
         self.track_artists = []
@@ -173,10 +175,24 @@ class GameLogic:
         for item in tracks:
             if item['track'] is not None:
                 track_uris.append(item['track']['uri'])
-                track_names.append(item['track']['name'])
+                track_names.append(self._clean_title(item['track']['name']))
                 track_artists.append(item['track']['artists'][0]['name'])
         
         return track_uris, track_names, track_artists
+    
+    def _clean_title(self, title):
+        """Clean a song title by removing brackets and anything after ' - '"""
+        # Remove anything in brackets (including the brackets)
+        title = re.sub(r'\[.*?\]', '', title)
+        title = re.sub(r'\(.*?\)', '', title)
+        
+        # Remove anything after ' - ' (including the ' - ')
+        title = title.split(' - ')[0]
+        
+        # Clean up any extra whitespace
+        title = title.strip()
+        
+        return title
     
     def play_random(self):
         """Select a random track from the loaded tracks"""
@@ -188,11 +204,11 @@ class GameLogic:
         self.current_track_name = self.track_names[random_index]
         self.current_track_artist = self.track_artists[random_index]
         
-        return self.current_track, self.current_track_name, self.current_track_artist
+        return self.current_track, self.current_track_name, self.current_track_artist, self.game_settings
     
     def replay_current_track(self):
         """Return the current track information"""
-        return self.current_track, self.current_track_name, self.current_track_artist
+        return self.current_track, self.current_track_name, self.current_track_artist, self.game_settings
     
     def check_guess(self, guess):
         """Check if a guess is correct based on the game mode"""
@@ -205,15 +221,15 @@ class GameLogic:
         guess_lower = guess.lower()
         
         # Debug information
-        print(f"Checking guess: '{guess_lower}' against '{correct_title}' or '{correct_full}' in mode: {self.game_mode}")
+        print(f"Checking guess: '{guess_lower}' against '{correct_title}' or '{correct_full}' in mode: {self.game_settings[0]}")
         
-        if self.game_mode == "Expert":
+        if self.game_settings[0] == "Expert":
             # Exact match on "title by artist"
             return guess_lower == correct_full
-        elif self.game_mode == "Harder":
+        elif self.game_settings[0] == "Harder":
             # Exact match on title only
             return guess_lower == correct_title
-        elif self.game_mode == "Hard":
+        elif self.game_settings[0] == "Hard":
             # Close match with <= 1 error on title, or exact match on full
             title_dist = levenshtein_distance(guess_lower, correct_title)
             result = title_dist <= 1 or guess_lower == correct_full
@@ -318,4 +334,8 @@ class GameLogic:
     
     def set_game_mode(self, mode):
         """Set the game mode"""
-        self.game_mode = mode 
+        self.game_settings = (mode, 1.0, False)  # Default values for other settings
+
+    def set_game_settings(self, settings):
+        """Set the game settings tuple (guessdiff, perreveal, randomstart)"""
+        self.game_settings = settings 

@@ -52,7 +52,7 @@ class SpotifyGuessingGameApp(ctk.CTk):
         self.track_uris = []
         self.track_names = []
         self.track_artists = []
-        self.game_mode = "Normal"
+        self.game_settings = ("Easy", 1.0, False)  # (guessdiff, perreveal, randomstart)
         self.played_songs = []
         
         # Configure grid layout (4x4)
@@ -75,7 +75,7 @@ class SpotifyGuessingGameApp(ctk.CTk):
         self.current_screen = StartScreen(self, self.game_logic)
         self.current_screen.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
     
-    def show_game_screen(self, track_uris, track_names, track_artists, game_mode):
+    def show_game_screen(self, track_uris, track_names, track_artists, game_settings):
         """Switch to the game screen with the selected playlist"""
         if self.current_screen:
             self.current_screen.destroy()
@@ -83,7 +83,7 @@ class SpotifyGuessingGameApp(ctk.CTk):
         self.track_uris = track_uris
         self.track_names = track_names
         self.track_artists = track_artists
-        self.game_mode = game_mode
+        self.game_settings = game_settings
         self.played_songs = []
         
         self.current_screen = GameScreen(
@@ -93,7 +93,7 @@ class SpotifyGuessingGameApp(ctk.CTk):
             self.track_uris,
             self.track_names,
             self.track_artists,
-            self.game_mode
+            self.game_settings
         )
         self.current_screen.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
         
