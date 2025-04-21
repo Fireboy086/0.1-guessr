@@ -16,6 +16,12 @@ class StartScreen(ctk.CTkFrame):
     def __init__(self, parent, game_logic):
         super().__init__(parent, fg_color=("#f0f0f0", "#1e1e1e"), corner_radius=0)
         self.parent = parent
+        # Center window on screen
+        screen_width = self.parent.winfo_screenwidth()
+        screen_height = self.parent.winfo_screenheight()
+        x = (screen_width - 1000) // 2
+        y = (screen_height - 1000) // 2
+        self.parent.geometry(f"1000x1000+{x}+{y}")
         self.game_logic = game_logic
         
         # Image cache for playlist covers
@@ -36,7 +42,8 @@ class StartScreen(ctk.CTkFrame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=0)  # Header
         self.rowconfigure(1, weight=1)  # Content
-        self.rowconfigure(2, weight=0)  # Footer
+        self.rowconfigure(2, weight=0)  # Settings
+        self.rowconfigure(3, weight=0)  # Footer
         
         # ===== HEADER SECTION =====
         self.header_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -108,6 +115,98 @@ class StartScreen(ctk.CTkFrame):
             height=30
         )
         self.custom_tab.pack(side="left")
+        
+        # ===== SETTINGS SECTION =====
+        self.settings_frame = ctk.CTkFrame(self, corner_radius=15)
+        self.settings_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=10)
+        
+        # Settings title
+        self.settings_header = ctk.CTkLabel(
+            self.settings_frame,
+            text="Game Settings",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        self.settings_header.pack(pady=(15, 5), padx=15, anchor="w")
+        
+        # Settings content frame
+        self.settings_content = ctk.CTkFrame(self.settings_frame, fg_color="transparent")
+        self.settings_content.pack(fill="x", padx=15, pady=(5, 15))
+        
+        # Game mode selection
+        self.mode_frame = ctk.CTkFrame(self.settings_content, fg_color="transparent")
+        self.mode_frame.pack(fill="x", pady=5)
+        
+        self.mode_label = ctk.CTkLabel(
+            self.mode_frame,
+            text="Game Mode:",
+            font=ctk.CTkFont(size=14)
+        )
+        self.mode_label.pack(side="left", padx=(0, 10))
+        
+        self.mode_var = ctk.StringVar(value="Normal")
+        self.mode_menu = ctk.CTkOptionMenu(
+            self.mode_frame,
+            values=["Normal", "Hard", "Harder", "Expert"],
+            variable=self.mode_var,
+            command=self._update_mode_description,
+            width=120
+        )
+        self.mode_menu.pack(side="left")
+        
+        # Mode description
+        self.mode_desc = ctk.CTkLabel(
+            self.mode_frame,
+            text="",
+            font=ctk.CTkFont(size=12),
+            text_color=("gray50", "gray70")
+        )
+        self.mode_desc.pack(side="left", padx=10)
+        
+        # Playback settings frame
+        self.playback_frame = ctk.CTkFrame(self.settings_content, fg_color="transparent")
+        self.playback_frame.pack(fill="x", pady=5)
+        
+        # Per reveal slider
+        self.perreveal_label = ctk.CTkLabel(
+            self.playback_frame,
+            text="Seconds per reveal:",
+            font=ctk.CTkFont(size=14)
+        )
+        self.perreveal_label.pack(side="left", padx=(0, 10))
+        
+        self.perreveal_var = ctk.DoubleVar(value=1.0)
+        self.perreveal_slider = ctk.CTkSlider(
+            self.playback_frame,
+            from_=0.5,
+            to=3.0,
+            number_of_steps=5,
+            variable=self.perreveal_var,
+            width=120
+        )
+        self.perreveal_slider.pack(side="left")
+        
+        self.perreveal_value = ctk.CTkLabel(
+            self.playback_frame,
+            text="1.0s",
+            font=ctk.CTkFont(size=12)
+        )
+        self.perreveal_value.pack(side="left", padx=10)
+        
+        # Random start checkbox
+        self.randomstart_var = ctk.BooleanVar(value=True)
+        self.randomstart_check = ctk.CTkCheckBox(
+            self.playback_frame,
+            text="Random start position",
+            variable=self.randomstart_var,
+            font=ctk.CTkFont(size=14)
+        )
+        self.randomstart_check.pack(side="left", padx=20)
+        
+        # Update initial mode description
+        self._update_mode_description()
+        
+        # Bind slider to update value label
+        self.perreveal_slider.configure(command=self._update_perreveal_value)
         
         # Playlist selection container (scrollable)
         self.playlist_container = ctk.CTkScrollableFrame(
@@ -218,56 +317,9 @@ class StartScreen(ctk.CTkFrame):
         )
         self.playlist_info.pack(pady=(5, 15))
         
-        # Game mode section
-        self.mode_frame = ctk.CTkFrame(self.right_scroll, fg_color="transparent")
-        self.mode_frame.pack(fill="x", padx=20, pady=10)
-        
-        self.mode_title = ctk.CTkLabel(
-            self.mode_frame,
-            text="Game Mode",
-            font=ctk.CTkFont(size=18, weight="bold")
-        )
-        self.mode_title.pack(anchor="w", pady=(0, 10))
-        
-        # Mode selection with radio buttons
-        self.mode_var = ctk.StringVar(value="Normal")
-        
-        self.modes = {
-            "Normal": "Partial matches shown with up to 2 letter errors",
-            "Hard": "Shows matches with at most 1 letter error",
-            "Harder": "Only exact song title matches shown",
-            "Expert": "Requires exact 'title by artist' match"
-        }
-        
-        # Create radio buttons for modes
-        for i, (mode, desc) in enumerate(self.modes.items()):
-            mode_frame = ctk.CTkFrame(self.mode_frame, fg_color="transparent")
-            mode_frame.pack(fill="x", pady=5)
-            
-            radio = ctk.CTkRadioButton(
-                mode_frame,
-                text=mode,
-                variable=self.mode_var,
-                value=mode,
-                font=ctk.CTkFont(size=14, weight="bold"),
-                command=self._update_mode_description
-            )
-            radio.pack(side="left", padx=10)
-            
-            # Make description a multi-line text that wraps properly
-            desc_label = ctk.CTkLabel(
-                mode_frame,
-                text=desc,
-                font=ctk.CTkFont(size=13),
-                text_color=("gray50", "gray70"),
-                wraplength=180,  # Set wrapping width
-                justify="left"
-            )
-            desc_label.pack(side="left", padx=5, fill="x", expand=True)
-        
         # ===== FOOTER SECTION =====
         self.footer_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.footer_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
+        self.footer_frame.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 20))
         
         # Start game button
         self.start_button = ctk.CTkButton(
@@ -862,8 +914,8 @@ class StartScreen(ctk.CTkFrame):
         try:
             # Get game settings
             guessdiff = self.mode_var.get()
-            perreveal = 1.0  # Default value = 0.5
-            randomstart = True  # Default value = False
+            perreveal = self.perreveal_var.get()
+            randomstart = self.randomstart_var.get()
             game_settings = (guessdiff, perreveal, randomstart)
             
             # Get selected playlist
@@ -1179,4 +1231,8 @@ class StartScreen(ctk.CTkFrame):
         
         # Make window appear on top and lift it
         window.lift()
-        window.focus_force() 
+        window.focus_force()
+    
+    def _update_perreveal_value(self, value):
+        """Update the perreveal value label"""
+        self.perreveal_value.configure(text=f"{value:.1f}s") 

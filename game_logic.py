@@ -265,10 +265,11 @@ class GameLogic:
                 if word.startswith(query):
                     return True
             
-            # For shorter queries (1-3 chars), be more lenient
+            # For shorter queries (1-3 chars), use scaled Levenshtein distance
             if len(query) <= 3:
-                return True
-                
+                max_distance = len(query) - 1  # Allow fewer errors for shorter queries
+                return levenshtein_distance(query, title) <= max_distance
+            
             # For medium queries (4-6 chars), allow prefix matching
             if len(query) <= 6:
                 if title.startswith(query):

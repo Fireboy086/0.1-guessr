@@ -18,6 +18,7 @@ class GameScreen(ctk.CTkFrame):
     def __init__(self, parent, game_logic, spotify_manager, track_uris, track_names, track_artists, game_settings):
         super().__init__(parent, corner_radius=10, fg_color="transparent")
         self.parent = parent
+        self.parent.geometry("1000x700")
         self.game_logic = game_logic
         self.spotify_manager = spotify_manager
         
