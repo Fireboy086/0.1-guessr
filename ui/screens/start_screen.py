@@ -1126,23 +1126,38 @@ class StartScreen(ctk.CTkFrame):
                 print(f"First method failed: {inner_e}. Trying alternative...")
             
             # Fetch tracks directly from Spotify if the first method failed
+            limit = 100
+            offset = 0
             results = self.game_logic.sp.playlist_items(
-                playlist_id, 
-                fields="items.track(name,uri,artists)",
-                limit=50
+                playlist_id,
+                fields="items.track(name,uri,artists),next",
+                limit=limit,
+                offset=offset
             )
-            
+
             if not results or 'items' not in results or len(results['items']) < 5:
                 error_msg = "Not enough tracks in playlist (need at least 5)"
                 print(f"Error: {error_msg}")
                 self.after(0, lambda msg=error_msg: self._show_error(msg))
                 return
-                
-            # Extract track details
+
+            # Extract track details and handle pagination
             tracks = []
-            for item in results['items']:
-                if item['track'] and item['track']['uri']:
-                    tracks.append(item['track'])
+            while True:
+                for item in results['items']:
+                    if item['track'] and item['track'].get('uri'):
+                        tracks.append(item['track'])
+
+                if results.get('next'):
+                    offset += limit
+                    results = self.game_logic.sp.playlist_items(
+                        playlist_id,
+                        fields="items.track(name,uri,artists),next",
+                        limit=limit,
+                        offset=offset
+                    )
+                else:
+                    break
             
             if len(tracks) < 5:
                 error_msg = "Not enough playable tracks (need at least 5)"
