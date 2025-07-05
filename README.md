@@ -1,6 +1,8 @@
 Spotify Guessing Game
 i am too lazy to make a readme myself so i used an AI
 
+### NOTICE! This project is no longer active and is being fully reworked
+
 ## Overview
 
 The Spotify Guessing Game is a fun and engaging game where users guess song titles and artists from a playlist. Players can challenge themselves with multiple difficulty levels and modes, including Hard, Harder, and Harder Harder Modes. The game features a modern UI built with customtkinter.
